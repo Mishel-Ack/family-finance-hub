@@ -22,6 +22,7 @@ import {
   addFamilyMember,
   listFamilyMembers,
   removeFamilyMember,
+  renameFamily,
   updateProfileName,
 } from "@/services/family";
 import { profileSchema } from "@/lib/validations";
@@ -29,12 +30,12 @@ import { profileSchema } from "@/lib/validations";
 export const Route = createFileRoute("/_authenticated/profile")({
   head: () => ({
     meta: [
-      { title: "Profile · FamilyBudget" },
+      { title: "Settings · FamilyBudget" },
       {
         name: "description",
-        content: "Manage your FamilyBudget account details, family and family members.",
+        content: "Manage your FamilyBudget account details, family household and members.",
       },
-      { property: "og:title", content: "Profile · FamilyBudget" },
+      { property: "og:title", content: "Settings · FamilyBudget" },
       { property: "og:description", content: "Your account, family and role settings." },
     ],
   }),
@@ -47,17 +48,19 @@ function ProfilePage() {
   const { profile, family, role, user, canEdit, refresh } = useAuth();
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
+  const [familyName, setFamilyName] = useState("");
   const [error, setError] = useState("");
   const [memberName, setMemberName] = useState("");
   const [memberRole, setMemberRole] = useState("MEMBER");
 
   useEffect(() => {
     setName(profile?.name ?? "");
-  }, [profile?.name]);
+    setFamilyName(family?.name ?? "");
+  }, [profile?.name, family?.name]);
 
   const membersQuery = useQuery({
     queryKey: ["members", family?.id],
-    queryFn: () => listFamilyMembers(family!.id),
+    queryFn: () => (family?.id ? listFamilyMembers(family.id) : Promise.resolve([])),
     enabled: Boolean(family?.id),
   });
 
@@ -73,6 +76,19 @@ function ProfilePage() {
       await refresh();
     },
     onError: (e: Error) => setError(e.message),
+  });
+
+  const saveFamilyName = useMutation({
+    mutationFn: async () => {
+      const trimmed = familyName.trim();
+      if (trimmed.length < 2) throw new Error("Family name must be at least 2 characters");
+      await renameFamily(family!.id, trimmed);
+    },
+    onSuccess: async () => {
+      toast.success("Family name updated");
+      await refresh();
+    },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const addMember = useMutation({
@@ -100,7 +116,7 @@ function ProfilePage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Profile" description="Your account and family settings." />
+      <PageHeader title="Settings" description="Manage your account profile, family household, and members." />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="shadow-soft">
@@ -131,17 +147,31 @@ function ProfilePage() {
 
         <Card className="shadow-soft">
           <CardHeader>
-            <CardTitle className="text-base">Family</CardTitle>
-            <CardDescription>Your household and role.</CardDescription>
+            <CardTitle className="text-base">Family Household</CardTitle>
+            <CardDescription>Your family household name and role.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-3 py-2">
-              <span className="text-sm text-muted-foreground">Family</span>
-              <span className="text-sm font-medium">{family?.name ?? "—"}</span>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="family-name">Family Name</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="family-name"
+                  value={familyName}
+                  maxLength={80}
+                  disabled={!canEdit}
+                  onChange={(e) => setFamilyName(e.target.value)}
+                />
+                <Button
+                  onClick={() => saveFamilyName.mutate()}
+                  disabled={!canEdit || saveFamilyName.isPending}
+                >
+                  Save
+                </Button>
+              </div>
             </div>
             <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-3 py-2">
               <span className="text-sm text-muted-foreground">Your role</span>
-              <Badge variant="secondary">{role ?? "—"}</Badge>
+              <Badge variant="secondary">{role ?? "OWNER"}</Badge>
             </div>
           </CardContent>
         </Card>

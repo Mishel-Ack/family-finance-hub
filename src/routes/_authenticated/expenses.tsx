@@ -209,8 +209,8 @@ function ExpensesPage() {
       />
 
       <Card className="shadow-soft">
-        <CardContent className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5">
-          <div className="relative sm:col-span-2 lg:col-span-2">
+        <CardContent className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-12">
+          <div className="relative sm:col-span-2 lg:col-span-4">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="pl-9"
@@ -220,20 +220,22 @@ function ExpensesPage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <Select value={category} onValueChange={setCategory}>
-            <SelectTrigger aria-label="Filter by category">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All categories</SelectItem>
-              {CATEGORIES.map((c) => (
-                <SelectItem key={c} value={c}>
-                  {c}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <div className="flex gap-2">
+          <div className="lg:col-span-2">
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger aria-label="Filter by category">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All categories</SelectItem>
+                {CATEGORIES.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-2 lg:col-span-4">
             <Input
               type="date"
               aria-label="From date"
@@ -247,17 +249,19 @@ function ExpensesPage() {
               onChange={(e) => setTo(e.target.value)}
             />
           </div>
-          <Select value={sort} onValueChange={setSort}>
-            <SelectTrigger aria-label="Sort expenses">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="date-desc">Newest first</SelectItem>
-              <SelectItem value="date-asc">Oldest first</SelectItem>
-              <SelectItem value="amount-desc">Highest amount</SelectItem>
-              <SelectItem value="amount-asc">Lowest amount</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="lg:col-span-2">
+            <Select value={sort} onValueChange={setSort}>
+              <SelectTrigger aria-label="Sort expenses">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="date-desc">Newest first</SelectItem>
+                <SelectItem value="date-asc">Oldest first</SelectItem>
+                <SelectItem value="amount-desc">Highest amount</SelectItem>
+                <SelectItem value="amount-asc">Lowest amount</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </CardContent>
       </Card>
 

@@ -58,14 +58,19 @@ function DashboardPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`Hello, ${profile?.name?.split(" ")[0] ?? "there"}`}
+        title={`Hello, ${profile?.name?.split(" ")[0] ?? user?.name?.split(" ")[0] ?? "there"}`}
         description={`${MONTHS[month - 1]} ${year} · ${family?.name ?? "Your family"}`}
         actions={
-          <Button asChild>
-            <Link to="/expenses">
-              Add expense <ArrowRight className="ml-1 h-4 w-4" />
-            </Link>
-          </Button>
+          <div className="flex items-center gap-3">
+            <div className="hidden rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary sm:block">
+              {profile?.email || user?.email}
+            </div>
+            <Button asChild>
+              <Link to="/expenses">
+                Add expense <ArrowRight className="ml-1 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
         }
       />
 
