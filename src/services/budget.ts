@@ -1,16 +1,28 @@
-import { supabase } from "@/integrations/supabase/client";
+import { prisma } from "@/lib/prisma";
 import type { Budget, BudgetCategory } from "@/types";
 
-export async function getBudget(familyId: string, month: number, year: number) {
-  const { data, error } = await supabase
-    .from("budgets")
-    .select("id, family_id, month, year, total_limit")
-    .eq("family_id", familyId)
-    .eq("month", month)
-    .eq("year", year)
-    .maybeSingle();
-  if (error) throw error;
-  return (data as Budget | null) ?? null;
+export async function getBudget(familyId: string, month: number, year: number): Promise<Budget | null> {
+  const b = await prisma.budget.findUnique({
+    where: {
+      familyId_month_year: {
+        familyId,
+        month,
+        year,
+      },
+    },
+  });
+
+  if (!b) return null;
+
+  return {
+    id: b.id,
+    family_id: b.familyId,
+    month: b.month,
+    year: b.year,
+    total_limit: b.totalLimit,
+    created_at: b.createdAt.toISOString(),
+    updated_at: b.updatedAt.toISOString(),
+  };
 }
 
 export async function upsertBudget(
@@ -18,32 +30,55 @@ export async function upsertBudget(
   month: number,
   year: number,
   totalLimit: number,
-) {
-  const { data, error } = await supabase
-    .from("budgets")
-    .upsert(
-      { family_id: familyId, month, year, total_limit: totalLimit },
-      { onConflict: "family_id,month,year" },
-    )
-    .select("id, family_id, month, year, total_limit")
-    .single();
-  if (error) throw error;
-  return data as Budget;
+): Promise<Budget> {
+  const b = await prisma.budget.upsert({
+    where: {
+      familyId_month_year: {
+        familyId,
+        month,
+        year,
+      },
+    },
+    create: {
+      familyId,
+      month,
+      year,
+      totalLimit,
+    },
+    update: {
+      totalLimit,
+    },
+  });
+
+  return {
+    id: b.id,
+    family_id: b.familyId,
+    month: b.month,
+    year: b.year,
+    total_limit: b.totalLimit,
+    created_at: b.createdAt.toISOString(),
+    updated_at: b.updatedAt.toISOString(),
+  };
 }
 
 export async function deleteBudget(budgetId: string) {
-  const { error } = await supabase.from("budgets").delete().eq("id", budgetId);
-  if (error) throw error;
+  await prisma.budget.delete({ where: { id: budgetId } });
 }
 
-export async function listBudgetCategories(budgetId: string) {
-  const { data, error } = await supabase
-    .from("budget_categories")
-    .select("id, budget_id, category, limit_amount")
-    .eq("budget_id", budgetId)
-    .order("category");
-  if (error) throw error;
-  return (data ?? []) as BudgetCategory[];
+export async function listBudgetCategories(budgetId: string): Promise<BudgetCategory[]> {
+  const cats = await prisma.budgetCategory.findMany({
+    where: { budgetId },
+    orderBy: { category: "asc" },
+  });
+
+  return cats.map((c) => ({
+    id: c.id,
+    budget_id: c.budgetId,
+    category: c.category,
+    limit_amount: c.limitAmount,
+    created_at: c.createdAt.toISOString(),
+    updated_at: c.updatedAt.toISOString(),
+  }));
 }
 
 export async function upsertBudgetCategory(
@@ -51,16 +86,24 @@ export async function upsertBudgetCategory(
   category: string,
   limitAmount: number,
 ) {
-  const { error } = await supabase
-    .from("budget_categories")
-    .upsert(
-      { budget_id: budgetId, category, limit_amount: limitAmount },
-      { onConflict: "budget_id,category" },
-    );
-  if (error) throw error;
+  await prisma.budgetCategory.upsert({
+    where: {
+      budgetId_category: {
+        budgetId,
+        category,
+      },
+    },
+    create: {
+      budgetId,
+      category,
+      limitAmount,
+    },
+    update: {
+      limitAmount,
+    },
+  });
 }
 
 export async function deleteBudgetCategory(id: string) {
-  const { error } = await supabase.from("budget_categories").delete().eq("id", id);
-  if (error) throw error;
+  await prisma.budgetCategory.delete({ where: { id } });
 }

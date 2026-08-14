@@ -2,7 +2,6 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Loader2, PiggyBank } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { loginSchema, registerSchema } from "@/lib/validations";
 import { useAuth } from "@/hooks/useAuth";
+import { loginFn, registerFn } from "@/services/auth.server";
 
 export const Route = createFileRoute("/auth")({
   ssr: false,
@@ -35,7 +35,7 @@ type Errors = Record<string, string>;
 
 function AuthPage() {
   const navigate = useNavigate();
-  const { session } = useAuth();
+  const { session, saveSession } = useAuth();
   const [tab, setTab] = useState("login");
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
@@ -60,14 +60,16 @@ function AuthPage() {
     }
     setErrors({});
     setBusy(true);
-    const { error } = await supabase.auth.signInWithPassword(parsed.data);
-    setBusy(false);
-    if (error) {
-      toast.error(error.message || "Unable to sign in");
-      return;
+    try {
+      const user = await loginFn({ data: parsed.data });
+      await saveSession(user);
+      toast.success("Welcome back!");
+      void navigate({ to: "/dashboard", replace: true });
+    } catch (err: any) {
+      toast.error(err?.message || "Invalid email or password");
+    } finally {
+      setBusy(false);
     }
-    toast.success("Welcome back!");
-    void navigate({ to: "/dashboard", replace: true });
   };
 
   const handleRegister = async (event: React.FormEvent) => {
@@ -79,30 +81,22 @@ function AuthPage() {
     }
     setErrors({});
     setBusy(true);
-    const { data, error } = await supabase.auth.signUp({
-      email: parsed.data.email,
-      password: parsed.data.password,
-      options: {
-        emailRedirectTo: window.location.origin,
-        data: { name: parsed.data.name },
-      },
-    });
-    setBusy(false);
-    if (error) {
-      toast.error(
-        error.message.toLowerCase().includes("registered")
-          ? "This email is already registered. Please sign in instead."
-          : error.message,
-      );
-      return;
+    try {
+      const user = await registerFn({
+        data: {
+          name: parsed.data.name,
+          email: parsed.data.email,
+          password: parsed.data.password,
+        },
+      });
+      await saveSession(user);
+      toast.success("Account created successfully!");
+      void navigate({ to: "/dashboard", replace: true });
+    } catch (err: any) {
+      toast.error(err?.message || "Registration failed");
+    } finally {
+      setBusy(false);
     }
-    if (!data.session) {
-      toast.success("Account created. Check your email to confirm your address.");
-      setTab("login");
-      return;
-    }
-    toast.success("Account created!");
-    void navigate({ to: "/dashboard", replace: true });
   };
 
   return (

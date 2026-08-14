@@ -1,17 +1,19 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import type { Session, User } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+import type { SessionUser } from "@/services/auth.server";
 import { bootstrapUser, getMembership, getProfile } from "@/services/family";
 import type { Family, FamilyRole, Profile } from "@/types";
 
+const AUTH_KEY = "fb_user_session";
+
 interface AuthContextValue {
-  session: Session | null;
-  user: User | null;
+  session: SessionUser | null;
+  user: SessionUser | null;
   profile: Profile | null;
   family: Family | null;
   role: FamilyRole | null;
   loading: boolean;
   canEdit: boolean;
+  saveSession: (user: SessionUser) => Promise<void>;
   refresh: () => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -19,14 +21,14 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<SessionUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [family, setFamily] = useState<Family | null>(null);
   const [role, setRole] = useState<FamilyRole | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const hydrate = async (activeSession: Session | null) => {
-    if (!activeSession?.user) {
+  const hydrate = async (activeSession: SessionUser | null) => {
+    if (!activeSession) {
       setProfile(null);
       setFamily(null);
       setRole(null);
@@ -34,11 +36,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
-      const meta = activeSession.user.user_metadata as { name?: string } | undefined;
-      await bootstrapUser(meta?.name ?? "", activeSession.user.email ?? "");
+      await bootstrapUser(activeSession.id, activeSession.name, activeSession.email);
       const [nextProfile, membership] = await Promise.all([
-        getProfile(activeSession.user.id),
-        getMembership(activeSession.user.id),
+        getProfile(activeSession.id),
+        getMembership(activeSession.id),
       ]);
       setProfile(nextProfile);
       setFamily(membership?.family ?? null);
@@ -50,44 +51,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loadSession = async () => {
+    try {
+      const raw = localStorage.getItem(AUTH_KEY);
+      const user: SessionUser | null = raw ? JSON.parse(raw) : null;
+      setSession(user);
+      await hydrate(user);
+    } catch {
+      setSession(null);
+      await hydrate(null);
+    }
+  };
+
   useEffect(() => {
-    let mounted = true;
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      if (!mounted) return;
-      setSession(nextSession);
-      setLoading(true);
-      setTimeout(() => {
-        void hydrate(nextSession);
-      }, 0);
-    });
-
-    void supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return;
-      setSession(data.session);
-      void hydrate(data.session);
-    });
-
-    return () => {
-      mounted = false;
-      sub.subscription.unsubscribe();
-    };
+    void loadSession();
   }, []);
+
+  const saveSession = async (user: SessionUser) => {
+    localStorage.setItem(AUTH_KEY, JSON.stringify(user));
+    setSession(user);
+    await hydrate(user);
+  };
 
   const value: AuthContextValue = {
     session,
-    user: session?.user ?? null,
+    user: session,
     profile,
     family,
     role,
     loading,
     canEdit: role !== null && role !== "VIEWER",
+    saveSession,
     refresh: async () => {
-      const { data } = await supabase.auth.getSession();
-      await hydrate(data.session);
+      await loadSession();
     },
     signOut: async () => {
-      await supabase.auth.signOut();
+      localStorage.removeItem(AUTH_KEY);
+      setSession(null);
+      setProfile(null);
+      setFamily(null);
+      setRole(null);
     },
   };
 

@@ -1,46 +1,60 @@
-import { supabase } from "@/integrations/supabase/client";
+import { prisma } from "@/lib/prisma";
 import type { Expense, ExpenseInput } from "@/types";
 
-export async function listExpenses(familyId: string, from?: string, to?: string) {
-  let query = supabase
-    .from("expenses")
-    .select("id, family_id, user_id, amount, category, date, description, family_member, created_at")
-    .eq("family_id", familyId);
-  if (from) query = query.gte("date", from);
-  if (to) query = query.lte("date", to);
-  const { data, error } = await query.order("date", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as Expense[];
+export async function listExpenses(familyId: string, from?: string, to?: string): Promise<Expense[]> {
+  const whereClause: any = { familyId };
+  if (from || to) {
+    whereClause.date = {};
+    if (from) whereClause.date.gte = new Date(from);
+    if (to) whereClause.date.lte = new Date(to);
+  }
+
+  const items = await prisma.expense.findMany({
+    where: whereClause,
+    orderBy: { date: "desc" },
+  });
+
+  return items.map((e) => ({
+    id: e.id,
+    family_id: e.familyId,
+    user_id: e.userId,
+    amount: e.amount,
+    category: e.category,
+    date: e.date.toISOString().slice(0, 10),
+    description: e.description,
+    family_member: e.familyMember,
+    created_at: e.createdAt.toISOString(),
+    updated_at: e.updatedAt.toISOString(),
+  }));
 }
 
 export async function createExpense(familyId: string, userId: string, input: ExpenseInput) {
-  const { error } = await supabase.from("expenses").insert({
-    family_id: familyId,
-    user_id: userId,
-    amount: input.amount,
-    category: input.category,
-    date: input.date,
-    description: input.description,
-    family_member: input.familyMember,
+  await prisma.expense.create({
+    data: {
+      familyId,
+      userId,
+      amount: input.amount,
+      category: input.category,
+      date: new Date(input.date),
+      description: input.description ?? "",
+      familyMember: input.familyMember ?? "",
+    },
   });
-  if (error) throw error;
 }
 
 export async function updateExpense(id: string, input: ExpenseInput) {
-  const { error } = await supabase
-    .from("expenses")
-    .update({
+  await prisma.expense.update({
+    where: { id },
+    data: {
       amount: input.amount,
       category: input.category,
-      date: input.date,
-      description: input.description,
-      family_member: input.familyMember,
-    })
-    .eq("id", id);
-  if (error) throw error;
+      date: new Date(input.date),
+      description: input.description ?? "",
+      familyMember: input.familyMember ?? "",
+    },
+  });
 }
 
 export async function deleteExpense(id: string) {
-  const { error } = await supabase.from("expenses").delete().eq("id", id);
-  if (error) throw error;
+  await prisma.expense.delete({ where: { id } });
 }
