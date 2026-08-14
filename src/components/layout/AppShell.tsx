@@ -25,7 +25,7 @@ const NAV = [
   { to: "/profile", label: "Profile", icon: UserRound },
 ] as const;
 
-function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
+function NavLinks({ onNavigate }: { onNavigate?: (() => void) | undefined }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   return (
     <nav className="flex flex-col gap-1" aria-label="Main navigation">
@@ -52,7 +52,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
+function SidebarBody({ onNavigate }: { onNavigate?: (() => void) | undefined }) {
   const { profile, family, signOut } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
