@@ -11,9 +11,9 @@ export function StatCard({
 }: {
   label: string;
   value: string;
-  hint?: string;
+  hint?: string | undefined;
   icon: LucideIcon;
-  tone?: "default" | "success" | "warning" | "destructive";
+  tone?: "default" | "success" | "warning" | "destructive" | undefined;
 }) {
   const toneClass = {
     default: "text-primary bg-primary/10",

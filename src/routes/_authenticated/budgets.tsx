@@ -311,7 +311,7 @@ function BudgetsPage() {
             <div className="space-y-1.5">
               <Label htmlFor="cat">Category</Label>
               <Select
-                value={editing?.category}
+                value={editing?.category ?? CATEGORIES[0]}
                 onValueChange={(v) => setEditing((e) => (e ? { ...e, category: v } : e))}
               >
                 <SelectTrigger id="cat">
