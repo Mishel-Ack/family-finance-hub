@@ -14,16 +14,224 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      budget_categories: {
+        Row: {
+          budget_id: string
+          category: string
+          created_at: string
+          id: string
+          limit_amount: number
+          updated_at: string
+        }
+        Insert: {
+          budget_id: string
+          category: string
+          created_at?: string
+          id?: string
+          limit_amount: number
+          updated_at?: string
+        }
+        Update: {
+          budget_id?: string
+          category?: string
+          created_at?: string
+          id?: string
+          limit_amount?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_categories_budget_id_fkey"
+            columns: ["budget_id"]
+            isOneToOne: false
+            referencedRelation: "budgets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      budgets: {
+        Row: {
+          created_at: string
+          family_id: string
+          id: string
+          month: number
+          total_limit: number
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          created_at?: string
+          family_id: string
+          id?: string
+          month: number
+          total_limit: number
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          created_at?: string
+          family_id?: string
+          id?: string
+          month?: number
+          total_limit?: number
+          updated_at?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budgets_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      expenses: {
+        Row: {
+          amount: number
+          category: string
+          created_at: string
+          date: string
+          description: string
+          family_id: string
+          family_member: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          category: string
+          created_at?: string
+          date?: string
+          description?: string
+          family_id: string
+          family_member?: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          category?: string
+          created_at?: string
+          date?: string
+          description?: string
+          family_id?: string
+          family_member?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expenses_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      families: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          owner_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          owner_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          owner_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      family_members: {
+        Row: {
+          created_at: string
+          display_name: string
+          family_id: string
+          id: string
+          role: Database["public"]["Enums"]["family_role"]
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string
+          family_id: string
+          id?: string
+          role?: Database["public"]["Enums"]["family_role"]
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          family_id?: string
+          id?: string
+          role?: Database["public"]["Enums"]["family_role"]
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "family_members_family_id_fkey"
+            columns: ["family_id"]
+            isOneToOne: false
+            referencedRelation: "families"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email?: string
+          id: string
+          name?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      bootstrap_user: {
+        Args: { _email: string; _name: string }
+        Returns: string
+      }
+      budget_family_id: { Args: { _budget_id: string }; Returns: string }
+      can_edit_family: { Args: { _family_id: string }; Returns: boolean }
+      is_family_member: { Args: { _family_id: string }; Returns: boolean }
     }
     Enums: {
-      [_ in never]: never
+      family_role: "OWNER" | "ADMIN" | "MEMBER" | "VIEWER"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +358,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      family_role: ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
+    },
   },
 } as const
