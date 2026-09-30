@@ -1,5 +1,3 @@
-// Prisma schema for FamilyBudget (using SQLite for zero-config local dev or Postgres)
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -7,6 +5,13 @@ datasource db {
 
 generator client {
   provider = "prisma-client-js"
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
 }
 
 model User {
@@ -22,65 +27,99 @@ model User {
 }
 
 model Family {
-  id        String         @id @default(uuid())
-  name      String
-  ownerId   String
-  owner     User           @relation("FamilyOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
-  members   FamilyMember[]
-  budgets   Budget[]
-  expenses  Expense[]
+  id         String         @id @default(uuid())
+  name       String
+  ownerId    String
+  owner      User           @relation("FamilyOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  members    FamilyMember[]
+  categories Category[]
+  budgets    Budget[]
+  expenses   Expense[]
+
+  @@index([ownerId])
 }
 
 model FamilyMember {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   familyId    String
-  family      Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  family      Family    @relation(fields: [familyId], references: [id], onDelete: Cascade)
   userId      String?
-  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  displayName String   @default("")
-  role        String   @default("MEMBER") // OWNER, ADMIN, MEMBER, VIEWER
-  createdAt   DateTime @default(now())
+  user        User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName String    @default("")
+  role        Role      @default(MEMBER)
+  createdAt   DateTime  @default(now())
+  expenses    Expense[]
+
+  @@unique([familyId, userId])
+  @@index([familyId])
+}
+
+model Category {
+  id               String           @id @default(uuid())
+  familyId         String
+  family           Family           @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  name             String
+  color            String           @default("#6b7280")
+  icon             String           @default("Tag")
+  isDefault        Boolean          @default(false)
+  archivedAt       DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  budgetCategories BudgetCategory[]
+  expenses         Expense[]
+
+  @@unique([familyId, name])
+  @@index([familyId])
 }
 
 model Budget {
-  id         String           @id @default(uuid())
-  familyId   String
-  family     Family           @relation(fields: [familyId], references: [id], onDelete: Cascade)
-  month      Int
-  year       Int
-  totalLimit Float
-  createdAt  DateTime         @default(now())
-  updatedAt  DateTime         @updatedAt
-  categories BudgetCategory[]
+  id              String           @id @default(uuid())
+  familyId        String
+  family          Family           @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  month           Int
+  year            Int
+  totalLimitPaise Int
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  categories      BudgetCategory[]
 
   @@unique([familyId, month, year])
+  @@index([familyId])
 }
 
 model BudgetCategory {
-  id          String   @id @default(uuid())
-  budgetId    String
-  budget      Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
-  category    String
-  limitAmount Float
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(uuid())
+  budgetId        String
+  budget          Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  categoryId      String
+  category        Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  limitAmountPaise Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  @@unique([budgetId, category])
+  @@unique([budgetId, categoryId])
+  @@index([budgetId])
 }
 
 model Expense {
-  id           String   @id @default(uuid())
-  familyId     String
-  family       Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  amount       Float
-  category     String
-  date         DateTime @default(now())
-  description  String   @default("")
-  familyMember String   @default("")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String        @id @default(uuid())
+  familyId    String
+  family      Family        @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memberId    String?
+  member      FamilyMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  categoryId  String
+  category    Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  amountPaise Int
+  date        DateTime      @default(now())
+  description String        @default("")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([familyId, date])
+  @@index([familyId, categoryId])
+  @@index([memberId])
 }

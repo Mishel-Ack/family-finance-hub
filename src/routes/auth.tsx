@@ -35,7 +35,7 @@ type Errors = Record<string, string>;
 
 function AuthPage() {
   const navigate = useNavigate();
-  const { session, saveSession } = useAuth();
+  const { session, refresh } = useAuth();
   const [tab, setTab] = useState("login");
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
@@ -61,8 +61,8 @@ function AuthPage() {
     setErrors({});
     setBusy(true);
     try {
-      const user = await loginFn({ data: parsed.data });
-      await saveSession(user);
+      await loginFn({ data: parsed.data });
+      await refresh();
       toast.success("Welcome back!");
       void navigate({ to: "/dashboard", replace: true });
     } catch (err: any) {
@@ -82,14 +82,14 @@ function AuthPage() {
     setErrors({});
     setBusy(true);
     try {
-      const user = await registerFn({
+      await registerFn({
         data: {
           name: parsed.data.name,
           email: parsed.data.email,
           password: parsed.data.password,
         },
       });
-      await saveSession(user);
+      await refresh();
       toast.success("Account created successfully!");
       void navigate({ to: "/dashboard", replace: true });
     } catch (err: any) {

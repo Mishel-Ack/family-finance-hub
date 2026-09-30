@@ -53,20 +53,20 @@ function ReportsPage() {
 
   const summaryQuery = useQuery({
     queryKey: ["summary", family?.id, month, year],
-    queryFn: () => getMonthlySummary(family!.id, month, year),
+    queryFn: () => getMonthlySummary(month, year),
     enabled: Boolean(family?.id),
   });
 
   const trendQuery = useQuery({
     queryKey: ["trend", family?.id, year],
-    queryFn: () => getYearlyTrend(family!.id, year),
+    queryFn: () => getYearlyTrend(year),
     enabled: Boolean(family?.id),
   });
 
   const summary = summaryQuery.data;
   const pieData = (summary?.categories ?? [])
     .filter((c) => c.spent > 0)
-    .map((c) => ({ name: c.category, value: c.spent }));
+    .map((c) => ({ name: c.category, value: c.spent, color: c.color }));
   const compareData = (summary?.categories ?? [])
     .filter((c) => c.limit > 0 || c.spent > 0)
     .map((c) => ({ name: c.category, Limit: c.limit, Spent: c.spent }));
@@ -138,7 +138,7 @@ function ReportsPage() {
                         {pieData.map((entry) => (
                           <Cell
                             key={entry.name}
-                            fill={CATEGORY_COLORS[entry.name] ?? "var(--primary)"}
+                            fill={entry.color || CATEGORY_COLORS[entry.name] || "var(--primary)"}
                           />
                         ))}
                       </Pie>

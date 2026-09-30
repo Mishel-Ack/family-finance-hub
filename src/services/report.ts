@@ -1,7 +1,9 @@
+import { createServerFn } from "@tanstack/react-start";
 import { getBudget, listBudgetCategories } from "./budget";
 import { listExpenses } from "./expense";
-import { CATEGORIES } from "@/lib/constants";
+import { listCategories } from "./category";
 import { statusFor, usagePercent } from "@/lib/calculations";
+import { fromPaise } from "@/lib/money";
 import type { Expense } from "@/types";
 
 export function monthRange(month: number, year: number) {
@@ -12,6 +14,12 @@ export function monthRange(month: number, year: number) {
 
 export interface CategoryBreakdown {
   category: string;
+  categoryId: string;
+  color: string;
+  icon: string;
+  limitPaise: number;
+  spentPaise: number;
+  remainingPaise: number;
   limit: number;
   spent: number;
   remaining: number;
@@ -23,6 +31,10 @@ export interface MonthlySummary {
   month: number;
   year: number;
   budgetId: string | null;
+  totalLimitPaise: number;
+  totalSpentPaise: number;
+  remainingPaise: number;
+  allocatedPaise: number;
   totalLimit: number;
   totalSpent: number;
   remaining: number;
@@ -34,66 +46,92 @@ export interface MonthlySummary {
   allocated: number;
 }
 
-export async function getMonthlySummary(
-  familyId: string,
-  month: number,
-  year: number,
-): Promise<MonthlySummary> {
-  const { from, to } = monthRange(month, year);
-  const budget = await getBudget(familyId, month, year);
-  const [categories, expenses] = await Promise.all([
-    budget ? listBudgetCategories(budget.id) : Promise.resolve([]),
-    listExpenses(familyId, from, to),
-  ]);
+export const getMonthlySummaryFn = createServerFn({ method: "GET" })
+  .validator((d: { month: number; year: number }) => d)
+  .handler(async ({ data: { month, year } }): Promise<MonthlySummary> => {
+    const { from, to } = monthRange(month, year);
+    const [budget, familyCategories, expenses] = await Promise.all([
+      getBudget(month, year),
+      listCategories(),
+      listExpenses(from, to),
+    ]);
 
-  const totalLimit = Number(budget?.total_limit ?? 0);
-  const totalSpent = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
-  const percent = usagePercent(totalSpent, totalLimit);
+    const budgetCategories = budget ? await listBudgetCategories(budget.id) : [];
 
-  const spentByCategory = new Map<string, number>();
-  for (const e of expenses) {
-    spentByCategory.set(e.category, (spentByCategory.get(e.category) ?? 0) + Number(e.amount));
-  }
+    const totalLimitPaise = budget?.total_limit_paise ?? 0;
+    const totalSpentPaise = expenses.reduce((sum, e) => sum + (e.amount_paise ?? 0), 0);
+    const percent = usagePercent(totalSpentPaise, totalLimitPaise);
 
-  const known = new Set<string>([...CATEGORIES, ...categories.map((c) => c.category)]);
-  const breakdown: CategoryBreakdown[] = [...known].map((category) => {
-    const limit = Number(categories.find((c) => c.category === category)?.limit_amount ?? 0);
-    const spent = spentByCategory.get(category) ?? 0;
-    const pct = usagePercent(spent, limit);
+    const spentByCategoryId = new Map<string, number>();
+    for (const e of expenses) {
+      const current = spentByCategoryId.get(e.category_id) ?? 0;
+      spentByCategoryId.set(e.category_id, current + (e.amount_paise ?? 0));
+    }
+
+    const breakdown: CategoryBreakdown[] = familyCategories.map((c) => {
+      const budgetCat = budgetCategories.find((b) => b.category_id === c.id);
+      const limitPaise = budgetCat?.limit_amount_paise ?? 0;
+      const spentPaise = spentByCategoryId.get(c.id) ?? 0;
+      const pct = usagePercent(spentPaise, limitPaise);
+
+      return {
+        category: c.name,
+        categoryId: c.id,
+        color: c.color,
+        icon: c.icon,
+        limitPaise,
+        spentPaise,
+        remainingPaise: limitPaise - spentPaise,
+        limit: fromPaise(limitPaise),
+        spent: fromPaise(spentPaise),
+        remaining: fromPaise(limitPaise - spentPaise),
+        percent: pct,
+        status: statusFor(pct),
+      };
+    });
+
+    const allocatedPaise = budgetCategories.reduce((s, c) => s + (c.limit_amount_paise ?? 0), 0);
+
     return {
-      category,
-      limit,
-      spent,
-      remaining: limit - spent,
-      percent: pct,
-      status: statusFor(pct),
+      month,
+      year,
+      budgetId: budget?.id ?? null,
+      totalLimitPaise,
+      totalSpentPaise,
+      remainingPaise: totalLimitPaise - totalSpentPaise,
+      allocatedPaise,
+      totalLimit: fromPaise(totalLimitPaise),
+      totalSpent: fromPaise(totalSpentPaise),
+      remaining: fromPaise(totalLimitPaise - totalSpentPaise),
+      percent,
+      status: statusFor(percent),
+      expenseCount: expenses.length,
+      expenses,
+      categories: breakdown,
+      allocated: fromPaise(allocatedPaise),
     };
   });
 
-  return {
-    month,
-    year,
-    budgetId: budget?.id ?? null,
-    totalLimit,
-    totalSpent,
-    remaining: totalLimit - totalSpent,
-    percent,
-    status: statusFor(percent),
-    expenseCount: expenses.length,
-    expenses,
-    categories: breakdown,
-    allocated: categories.reduce((s, c) => s + Number(c.limit_amount), 0),
-  };
+export const getYearlyTrendFn = createServerFn({ method: "GET" })
+  .validator((year: number) => year)
+  .handler(async ({ data: year }) => {
+    const from = `${year}-01-01`;
+    const to = `${year}-12-31`;
+    const expenses = await listExpenses(from, to);
+    const totalsPaise = Array.from({ length: 12 }, () => 0);
+    for (const e of expenses) {
+      const m = Number(e.date.slice(5, 7)) - 1;
+      if (m >= 0 && m < 12) {
+        totalsPaise[m] = (totalsPaise[m] ?? 0) + (e.amount_paise ?? 0);
+      }
+    }
+    return totalsPaise.map((p) => fromPaise(p));
+  });
+
+export function getMonthlySummary(month: number, year: number) {
+  return getMonthlySummaryFn({ data: { month, year } });
 }
 
-export async function getYearlyTrend(familyId: string, year: number) {
-  const from = `${year}-01-01`;
-  const to = `${year}-12-31`;
-  const expenses = await listExpenses(familyId, from, to);
-  const totals = Array.from({ length: 12 }, () => 0);
-  for (const e of expenses) {
-    const m = Number(e.date.slice(5, 7)) - 1;
-    if (m >= 0 && m < 12) totals[m] = (totals[m] ?? 0) + Number(e.amount);
-  }
-  return totals;
+export function getYearlyTrend(year: number) {
+  return getYearlyTrendFn({ data: year });
 }

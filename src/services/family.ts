@@ -1,125 +1,99 @@
 import { createServerFn } from "@tanstack/react-start";
 import { prisma } from "@/lib/prisma";
+import { requireMember, assertCan, Role } from "@/lib/authz";
 import type { Family, FamilyMember, Profile } from "@/types";
 
-export const bootstrapUserFn = createServerFn({ method: "POST" })
-  .validator((d: { userId: string; name: string; email: string }) => d)
-  .handler(async ({ data }) => {
-    let user = await prisma.user.findUnique({ where: { id: data.userId } });
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          id: data.userId,
-          name: data.name || "Member",
-          email: data.email || "",
-          passwordHash: "",
-        },
-      });
-    }
-
-    const existingMember = await prisma.familyMember.findFirst({
-      where: { userId: data.userId },
-    });
-
-    if (!existingMember) {
-      const family = await prisma.family.create({
-        data: {
-          name: `${data.name || "My"}'s Family`,
-          ownerId: data.userId,
-        },
-      });
-
-      await prisma.familyMember.create({
-        data: {
-          familyId: family.id,
-          userId: data.userId,
-          displayName: data.name || "Member",
-          role: "OWNER",
-        },
-      });
-    }
-  });
-
-export const getProfileFn = createServerFn({ method: "GET" })
-  .validator((userId: string) => userId)
-  .handler(async ({ data: userId }) => {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, name: true, email: true },
-    });
-    return user ? ({ id: user.id, name: user.name, email: user.email } as Profile) : null;
-  });
+export const getProfileFn = createServerFn({ method: "GET" }).handler(async () => {
+  const auth = await requireMember("readAll");
+  return auth.user as Profile;
+});
 
 export const updateProfileNameFn = createServerFn({ method: "POST" })
-  .validator((d: { userId: string; name: string }) => d)
-  .handler(async ({ data }) => {
+  .validator((name: string) => name)
+  .handler(async ({ data: name }) => {
+    const auth = await requireMember();
+
+    const trimmed = name.trim();
+    if (trimmed.length < 2) {
+      throw new Error("Name must be at least 2 characters");
+    }
+
     await prisma.user.update({
-      where: { id: data.userId },
-      data: { name: data.name },
+      where: { id: auth.userId },
+      data: { name: trimmed },
     });
   });
 
-export const getMembershipFn = createServerFn({ method: "GET" })
-  .validator((userId: string) => userId)
-  .handler(async ({ data: userId }) => {
-    const member = await prisma.familyMember.findFirst({
-      where: { userId },
-      include: {
-        family: true,
-      },
-    });
+export const getMembershipFn = createServerFn({ method: "GET" }).handler(async () => {
+  const auth = await requireMember("readAll");
 
-    if (!member || !member.family) return null;
-
-    const familyObj: Family = {
-      id: member.family.id,
-      name: member.family.name,
-      owner_id: member.family.ownerId,
-      created_at: member.family.createdAt.toISOString(),
-      updated_at: member.family.updatedAt.toISOString(),
-    };
-
-    const memberObj: FamilyMember = {
-      id: member.id,
-      family_id: member.familyId,
-      user_id: member.userId,
-      display_name: member.displayName,
-      role: member.role as any,
-      created_at: member.createdAt.toISOString(),
-    };
-
-    return { membership: memberObj, family: familyObj };
+  const member = await prisma.familyMember.findFirst({
+    where: { familyId: auth.familyId, userId: auth.userId },
+    include: { family: true },
   });
 
-export const listFamilyMembersFn = createServerFn({ method: "GET" })
-  .validator((familyId: string) => familyId)
-  .handler(async ({ data: familyId }) => {
-    const members = await prisma.familyMember.findMany({
-      where: { familyId },
-      orderBy: { createdAt: "asc" },
-    });
+  if (!member || !member.family) return null;
 
-    return members.map(
-      (m) =>
-        ({
-          id: m.id,
-          family_id: m.familyId,
-          user_id: m.userId,
-          display_name: m.displayName,
-          role: m.role as any,
-          created_at: m.createdAt.toISOString(),
-        }) as FamilyMember,
-    );
+  const familyObj: Family = {
+    id: member.family.id,
+    name: member.family.name,
+    owner_id: member.family.ownerId,
+    created_at: member.family.createdAt.toISOString(),
+    updated_at: member.family.updatedAt.toISOString(),
+  };
+
+  const memberObj: FamilyMember = {
+    id: member.id,
+    family_id: member.familyId,
+    user_id: member.userId,
+    display_name: member.displayName,
+    role: member.role as any,
+    created_at: member.createdAt.toISOString(),
+  };
+
+  return { membership: memberObj, family: familyObj };
+});
+
+export const listFamilyMembersFn = createServerFn({ method: "GET" }).handler(async () => {
+  const auth = await requireMember("readAll");
+
+  const members = await prisma.familyMember.findMany({
+    where: { familyId: auth.familyId },
+    orderBy: { createdAt: "asc" },
   });
+
+  return members.map(
+    (m) =>
+      ({
+        id: m.id,
+        family_id: m.familyId,
+        user_id: m.userId,
+        display_name: m.displayName,
+        role: m.role as any,
+        created_at: m.createdAt.toISOString(),
+      }) as FamilyMember,
+  );
+});
 
 export const addFamilyMemberFn = createServerFn({ method: "POST" })
-  .validator((d: { familyId: string; displayName: string; role: string }) => d)
+  .validator((d: { displayName: string; role: Role }) => d)
   .handler(async ({ data }) => {
+    const auth = await requireMember("member:add");
+
+    if (data.role === "OWNER") {
+      assertCan(auth.role, "member:changeRole");
+    }
+
+    const displayName = data.displayName.trim();
+    if (displayName.length < 2) {
+      throw new Error("Member display name must be at least 2 characters");
+    }
+
     await prisma.familyMember.create({
       data: {
-        familyId: data.familyId,
-        displayName: data.displayName,
-        role: data.role,
+        familyId: auth.familyId,
+        displayName,
+        role: data.role as any,
       },
     });
   });
@@ -127,47 +101,64 @@ export const addFamilyMemberFn = createServerFn({ method: "POST" })
 export const removeFamilyMemberFn = createServerFn({ method: "POST" })
   .validator((id: string) => id)
   .handler(async ({ data: id }) => {
+    const auth = await requireMember("member:remove");
+
+    const target = await prisma.familyMember.findFirst({
+      where: { id, familyId: auth.familyId },
+    });
+
+    if (!target) {
+      throw new Error("Family member not found"); // 404
+    }
+
+    if (target.role === "OWNER") {
+      throw new Error("Forbidden: Cannot remove the family OWNER");
+    }
+
     await prisma.familyMember.delete({ where: { id } });
   });
 
 export const renameFamilyFn = createServerFn({ method: "POST" })
-  .validator((d: { familyId: string; name: string }) => d)
-  .handler(async ({ data }) => {
+  .validator((name: string) => name)
+  .handler(async ({ data: name }) => {
+    const auth = await requireMember("family:rename");
+
+    const trimmed = name.trim();
+    if (trimmed.length < 2) {
+      throw new Error("Family name must be at least 2 characters");
+    }
+
     await prisma.family.update({
-      where: { id: data.familyId },
-      data: { name: data.name },
+      where: { id: auth.familyId },
+      data: { name: trimmed },
     });
   });
 
-// Client helpers that invoke server functions
-export function bootstrapUser(userId: string, name: string, email: string) {
-  return bootstrapUserFn({ data: { userId, name, email } });
+// Client helpers
+export function getProfile() {
+  return getProfileFn();
 }
 
-export function getProfile(userId: string) {
-  return getProfileFn({ data: userId });
+export function updateProfileName(name: string) {
+  return updateProfileNameFn({ data: name });
 }
 
-export function updateProfileName(userId: string, name: string) {
-  return updateProfileNameFn({ data: { userId, name } });
+export function getMembership() {
+  return getMembershipFn();
 }
 
-export function getMembership(userId: string) {
-  return getMembershipFn({ data: userId });
+export function listFamilyMembers() {
+  return listFamilyMembersFn();
 }
 
-export function listFamilyMembers(familyId: string) {
-  return listFamilyMembersFn({ data: familyId });
-}
-
-export function addFamilyMember(familyId: string, displayName: string, role: string) {
-  return addFamilyMemberFn({ data: { familyId, displayName, role } });
+export function addFamilyMember(displayName: string, role: Role) {
+  return addFamilyMemberFn({ data: { displayName, role } });
 }
 
 export function removeFamilyMember(id: string) {
   return removeFamilyMemberFn({ data: id });
 }
 
-export function renameFamily(familyId: string, name: string) {
-  return renameFamilyFn({ data: { familyId, name } });
+export function renameFamily(name: string) {
+  return renameFamilyFn({ data: name });
 }
