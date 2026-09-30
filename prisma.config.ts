@@ -8,8 +8,10 @@ export default defineConfig({
   },
   migrate: {
     datasource: {
-      provider: "sqlite",
-      url: "file:./dev.db",
+      provider: "postgresql",
+      url:
+        process.env.DATABASE_URL ??
+        "postgresql://postgres:postgres@localhost:5432/family_budget?schema=public",
     },
   },
 });

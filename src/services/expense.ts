@@ -1,15 +1,19 @@
 import { createServerFn } from "@tanstack/react-start";
+import { Prisma } from "@prisma/client";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireMember, can } from "@/lib/authz";
 import { fromPaise, toPaise } from "@/lib/money";
 import type { Expense, ExpenseInput } from "@/types";
+import { expenseSchema } from "@/lib/validations";
+import { httpError, notFound } from "@/lib/http-error";
 
 export const listExpensesFn = createServerFn({ method: "GET" })
-  .validator((d?: { from?: string; to?: string }) => d)
+  .validator((d?: { from?: string | undefined; to?: string | undefined }) => d)
   .handler(async ({ data }) => {
     const auth = await requireMember("readAll");
 
-    const whereClause: any = { familyId: auth.familyId };
+    const whereClause: Prisma.ExpenseWhereInput = { familyId: auth.familyId };
     if (data?.from || data?.to) {
       whereClause.date = {};
       if (data.from) whereClause.date.gte = new Date(data.from);
@@ -48,7 +52,7 @@ export const listExpensesFn = createServerFn({ method: "GET" })
   });
 
 export const createExpenseFn = createServerFn({ method: "POST" })
-  .validator((input: ExpenseInput) => input)
+  .validator(expenseSchema)
   .handler(async ({ data }) => {
     const auth = await requireMember("expense:create");
 
@@ -62,6 +66,15 @@ export const createExpenseFn = createServerFn({ method: "POST" })
     if (!memberId) {
       memberId = auth.memberId;
     }
+
+    const [category, member] = await Promise.all([
+      prisma.category.findFirst({
+        where: { id: data.categoryId, familyId: auth.familyId, archivedAt: null },
+      }),
+      prisma.familyMember.findFirst({ where: { id: memberId, familyId: auth.familyId } }),
+    ]);
+    if (!category) throw notFound("Category not found");
+    if (!member) throw notFound("Family member not found");
 
     await prisma.expense.create({
       data: {
@@ -77,7 +90,7 @@ export const createExpenseFn = createServerFn({ method: "POST" })
   });
 
 export const updateExpenseFn = createServerFn({ method: "POST" })
-  .validator((d: { id: string; input: ExpenseInput }) => d)
+  .validator(z.object({ id: z.string().min(1), input: expenseSchema }))
   .handler(async ({ data }) => {
     const auth = await requireMember();
 
@@ -86,18 +99,18 @@ export const updateExpenseFn = createServerFn({ method: "POST" })
     });
 
     if (!existing) {
-      throw new Error("Expense not found"); // 404 behavior for isolation
+      throw notFound("Expense not found");
     }
 
     // Check authorization: editAny or editOwn
     const isOwnerOfExpense = existing.userId === auth.userId;
     if (isOwnerOfExpense) {
       if (!can(auth.role, "expense:editOwn") && !can(auth.role, "expense:editAny")) {
-        throw new Error("Forbidden: Cannot edit this expense");
+        throw httpError("You cannot edit this expense", 403);
       }
     } else {
       if (!can(auth.role, "expense:editAny")) {
-        throw new Error("Forbidden: Cannot edit other members' expenses");
+        throw httpError("You cannot edit another member's expense", 403);
       }
     }
 
@@ -105,12 +118,24 @@ export const updateExpenseFn = createServerFn({ method: "POST" })
       throw new Error("Expense amount must be greater than 0");
     }
 
+    const category = await prisma.category.findFirst({
+      where: { id: data.input.categoryId, familyId: auth.familyId, archivedAt: null },
+      select: { id: true },
+    });
+    if (!category) throw notFound("Category not found");
+    const memberId = data.input.memberId ?? existing.memberId ?? auth.memberId;
+    const member = await prisma.familyMember.findFirst({
+      where: { id: memberId, familyId: auth.familyId },
+      select: { id: true },
+    });
+    if (!member) throw notFound("Family member not found");
+
     await prisma.expense.update({
       where: { id: data.id },
       data: {
         amountPaise: toPaise(data.input.amount),
         categoryId: data.input.categoryId,
-        memberId: data.input.memberId ?? existing.memberId,
+        memberId,
         date: new Date(data.input.date),
         description: data.input.description ?? "",
       },
@@ -127,17 +152,17 @@ export const deleteExpenseFn = createServerFn({ method: "POST" })
     });
 
     if (!existing) {
-      throw new Error("Expense not found"); // 404 behavior
+      throw notFound("Expense not found");
     }
 
     const isOwnerOfExpense = existing.userId === auth.userId;
     if (isOwnerOfExpense) {
       if (!can(auth.role, "expense:deleteOwn") && !can(auth.role, "expense:deleteAny")) {
-        throw new Error("Forbidden: Cannot delete this expense");
+        throw httpError("You cannot delete this expense", 403);
       }
     } else {
       if (!can(auth.role, "expense:deleteAny")) {
-        throw new Error("Forbidden: Cannot delete other members' expenses");
+        throw httpError("You cannot delete another member's expense", 403);
       }
     }
 

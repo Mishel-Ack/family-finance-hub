@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { toPaise, fromPaise, formatPaiseINR } from "./money";
 import { usagePercent, statusFor, remaining } from "./calculations";
-import { can } from "./authz";
+import { can, type Action, type Role } from "./authz";
 
 describe("money.ts unit tests", () => {
   it("converts rupees to paise correctly", () => {
@@ -9,6 +9,7 @@ describe("money.ts unit tests", () => {
     expect(toPaise(49.99)).toBe(4999);
     expect(toPaise(0.01)).toBe(1);
     expect(toPaise(0)).toBe(0);
+    expect(() => toPaise(12.345)).toThrow(/2 decimal places/);
   });
 
   it("converts paise to rupees correctly", () => {
@@ -46,6 +47,38 @@ describe("calculations.ts unit tests", () => {
 });
 
 describe("authz.ts permission matrix unit tests", () => {
+  it("checks every action for every role", () => {
+    const roles: Role[] = ["OWNER", "ADMIN", "MEMBER", "VIEWER"];
+    const actions: Action[] = [
+      "family:delete",
+      "family:rename",
+      "member:add",
+      "member:remove",
+      "member:changeRole",
+      "budget:manage",
+      "category:manage",
+      "expense:create",
+      "expense:editAny",
+      "expense:editOwn",
+      "expense:deleteAny",
+      "expense:deleteOwn",
+      "readAll",
+    ];
+    const permissions: Record<Role, Action[]> = {
+      OWNER: actions,
+      ADMIN: actions.filter(
+        (action) => action !== "family:delete" && action !== "member:changeRole",
+      ),
+      MEMBER: ["expense:create", "expense:editOwn", "expense:deleteOwn", "readAll"],
+      VIEWER: ["readAll"],
+    };
+    for (const role of roles) {
+      for (const action of actions) {
+        expect(can(role, action), `${role} → ${action}`).toBe(permissions[role].includes(action));
+      }
+    }
+  });
+
   it("enforces OWNER permissions", () => {
     expect(can("OWNER", "family:delete")).toBe(true);
     expect(can("OWNER", "member:changeRole")).toBe(true);

@@ -1,16 +1,8 @@
-export const DEFAULT_CATEGORIES = [
-  { name: "Housing", color: "#3b82f6", icon: "Home" },
-  { name: "Groceries", color: "#10b981", icon: "ShoppingCart" },
-  { name: "Utilities", color: "#f59e0b", icon: "Zap" },
-  { name: "Transportation", color: "#8b5cf6", icon: "Car" },
-  { name: "Healthcare", color: "#ef4444", icon: "Heart" },
-  { name: "Entertainment", color: "#ec4899", icon: "Film" },
-  { name: "Shopping", color: "#06b6d4", icon: "ShoppingBag" },
-  { name: "Other", color: "#6b7280", icon: "MoreHorizontal" },
-] as const;
-
 export function toPaise(rupees: number): number {
-  if (isNaN(rupees) || !isFinite(rupees)) return 0;
+  if (!Number.isFinite(rupees)) throw new Error("Enter a valid amount");
+  if (Math.round(rupees * 100) / 100 !== rupees) {
+    throw new Error("Amount cannot have more than 2 decimal places");
+  }
   return Math.round(rupees * 100);
 }
 

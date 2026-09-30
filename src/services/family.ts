@@ -2,6 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { prisma } from "@/lib/prisma";
 import { requireMember, assertCan, Role } from "@/lib/authz";
 import type { Family, FamilyMember, Profile } from "@/types";
+import { z } from "zod";
+import { httpError, notFound } from "@/lib/http-error";
 
 export const getProfileFn = createServerFn({ method: "GET" }).handler(async () => {
   const auth = await requireMember("readAll");
@@ -47,7 +49,7 @@ export const getMembershipFn = createServerFn({ method: "GET" }).handler(async (
     family_id: member.familyId,
     user_id: member.userId,
     display_name: member.displayName,
-    role: member.role as any,
+    role: member.role,
     created_at: member.createdAt.toISOString(),
   };
 
@@ -69,20 +71,23 @@ export const listFamilyMembersFn = createServerFn({ method: "GET" }).handler(asy
         family_id: m.familyId,
         user_id: m.userId,
         display_name: m.displayName,
-        role: m.role as any,
+        role: m.role,
         created_at: m.createdAt.toISOString(),
       }) as FamilyMember,
   );
 });
 
 export const addFamilyMemberFn = createServerFn({ method: "POST" })
-  .validator((d: { displayName: string; role: Role }) => d)
+  .validator(
+    z.object({
+      displayName: z.string().trim().min(2).max(80),
+      role: z.enum(["ADMIN", "MEMBER", "VIEWER", "OWNER"]),
+    }),
+  )
   .handler(async ({ data }) => {
     const auth = await requireMember("member:add");
 
-    if (data.role === "OWNER") {
-      assertCan(auth.role, "member:changeRole");
-    }
+    if (data.role === "OWNER") assertCan(auth.role, "member:changeRole");
 
     const displayName = data.displayName.trim();
     if (displayName.length < 2) {
@@ -93,7 +98,7 @@ export const addFamilyMemberFn = createServerFn({ method: "POST" })
       data: {
         familyId: auth.familyId,
         displayName,
-        role: data.role as any,
+        role: data.role,
       },
     });
   });
@@ -108,11 +113,11 @@ export const removeFamilyMemberFn = createServerFn({ method: "POST" })
     });
 
     if (!target) {
-      throw new Error("Family member not found"); // 404
+      throw notFound("Family member not found");
     }
 
     if (target.role === "OWNER") {
-      throw new Error("Forbidden: Cannot remove the family OWNER");
+      throw httpError("The family OWNER cannot be removed", 403);
     }
 
     await prisma.familyMember.delete({ where: { id } });

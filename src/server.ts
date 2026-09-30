@@ -1,5 +1,9 @@
 import "./lib/error-capture";
 
+if (!process.env["JWT_SECRET"]?.trim()) {
+  throw new Error("JWT_SECRET must be configured before the application starts.");
+}
+
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 

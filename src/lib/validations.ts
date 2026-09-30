@@ -3,7 +3,12 @@ import { z } from "zod";
 export const registerSchema = z
   .object({
     name: z.string().trim().min(2, "Name must be at least 2 characters").max(80),
-    email: z.string().trim().transform((val) => val.toLowerCase()).pipe(z.string().email("Enter a valid email")).pipe(z.string().max(255)),
+    email: z
+      .string()
+      .trim()
+      .transform((val) => val.toLowerCase())
+      .pipe(z.string().email("Enter a valid email"))
+      .pipe(z.string().max(255)),
     password: z.string().min(8, "Password must be at least 8 characters").max(72),
     confirmPassword: z.string(),
   })
@@ -13,7 +18,12 @@ export const registerSchema = z
   });
 
 export const loginSchema = z.object({
-  email: z.string().trim().transform((val) => val.toLowerCase()).pipe(z.string().email("Enter a valid email")).pipe(z.string().max(255)),
+  email: z
+    .string()
+    .trim()
+    .transform((val) => val.toLowerCase())
+    .pipe(z.string().email("Enter a valid email"))
+    .pipe(z.string().max(255)),
   password: z.string().min(1, "Password is required").max(72),
 });
 

@@ -65,8 +65,8 @@ function AuthPage() {
       await refresh();
       toast.success("Welcome back!");
       void navigate({ to: "/dashboard", replace: true });
-    } catch (err: any) {
-      toast.error(err?.message || "Invalid email or password");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Invalid email or password");
     } finally {
       setBusy(false);
     }
@@ -92,8 +92,8 @@ function AuthPage() {
       await refresh();
       toast.success("Account created successfully!");
       void navigate({ to: "/dashboard", replace: true });
-    } catch (err: any) {
-      toast.error(err?.message || "Registration failed");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Registration failed");
     } finally {
       setBusy(false);
     }

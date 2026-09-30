@@ -1,14 +1,38 @@
-import { getHeader, setHeader } from "@/lib/http-utils";
+import { getHeader } from "@/lib/http-utils";
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { createServerFn } from "@tanstack/react-start";
+import { DEFAULT_CATEGORIES } from "@/lib/default-categories";
 
 const SESSION_COOKIE_NAME = "fb_session";
 const SEVEN_DAYS_SECONDS = 60 * 60 * 24 * 7;
+const encoder = new TextEncoder();
+
+function encodeBase64Url(value: Uint8Array): string {
+  let binary = "";
+  for (const byte of value) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="));
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+async function signingKey(): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
+    "raw",
+    encoder.encode(getJwtSecret()),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign", "verify"],
+  );
+}
 
 function getJwtSecret(): string {
-  const secret = process.env.JWT_SECRET;
+  const secret = process.env["JWT_SECRET"];
   if (!secret || secret.trim() === "") {
     throw new Error("FATAL: JWT_SECRET environment variable is missing.");
   }
@@ -19,7 +43,9 @@ export interface SessionPayload {
   userId: string;
 }
 
-export function parseSessionFromHeader(cookieHeader: string | null | undefined): SessionPayload | null {
+export async function parseSessionFromHeader(
+  cookieHeader: string | null | undefined,
+): Promise<SessionPayload | null> {
   if (!cookieHeader) return null;
   const match = cookieHeader
     .split(";")
@@ -29,48 +55,70 @@ export function parseSessionFromHeader(cookieHeader: string | null | undefined):
 
   const token = match.substring(SESSION_COOKIE_NAME.length + 1);
   try {
-    const payload = jwt.verify(token, getJwtSecret()) as SessionPayload;
-    if (payload && typeof payload.userId === "string") {
-      return payload;
-    }
+    const [header, body, signature, extra] = token.split(".");
+    if (!header || !body || !signature || extra) return null;
+    const key = await signingKey();
+    const valid = await crypto.subtle.verify(
+      "HMAC",
+      key,
+      decodeBase64Url(signature),
+      encoder.encode(`${header}.${body}`),
+    );
+    if (!valid) return null;
+    const payload: unknown = JSON.parse(new TextDecoder().decode(decodeBase64Url(body)));
+    if (
+      typeof payload === "object" &&
+      payload !== null &&
+      "userId" in payload &&
+      typeof payload.userId === "string" &&
+      "exp" in payload &&
+      typeof payload.exp === "number" &&
+      payload.exp > Date.now() / 1000
+    )
+      return { userId: payload.userId };
   } catch {
     return null;
   }
   return null;
 }
 
-export function createSessionToken(userId: string): string {
-  return jwt.sign({ userId }, getJwtSecret(), { expiresIn: "7d" });
+export async function createSessionToken(userId: string): Promise<string> {
+  const header = encodeBase64Url(encoder.encode(JSON.stringify({ alg: "HS256", typ: "JWT" })));
+  const body = encodeBase64Url(
+    encoder.encode(
+      JSON.stringify({ userId, exp: Math.floor(Date.now() / 1000) + SEVEN_DAYS_SECONDS }),
+    ),
+  );
+  const signingInput = `${header}.${body}`;
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    await signingKey(),
+    encoder.encode(signingInput),
+  );
+  return `${signingInput}.${encodeBase64Url(new Uint8Array(signature))}`;
 }
 
-export function setSessionCookie(token: string) {
-  const isProd = process.env.NODE_ENV === "production";
-  const cookieOptions = [
-    `${SESSION_COOKIE_NAME}=${token}`,
-    "Path=/",
-    `Max-Age=${SEVEN_DAYS_SECONDS}`,
-    "HttpOnly",
-    "SameSite=Lax",
-  ];
-  if (isProd) {
-    cookieOptions.push("Secure");
-  }
-  setHeader("Set-Cookie", cookieOptions.join("; "));
+async function setSessionCookie(token: string) {
+  const isProd = process.env["NODE_ENV"] === "production";
+  const { setCookie } = await import("@tanstack/react-start/server");
+  setCookie(SESSION_COOKIE_NAME, token, {
+    path: "/",
+    maxAge: SEVEN_DAYS_SECONDS,
+    httpOnly: true,
+    sameSite: "lax",
+    secure: isProd,
+  });
 }
 
-export function clearSessionCookie() {
-  const isProd = process.env.NODE_ENV === "production";
-  const cookieOptions = [
-    `${SESSION_COOKIE_NAME}=`,
-    "Path=/",
-    "Max-Age=0",
-    "HttpOnly",
-    "SameSite=Lax",
-  ];
-  if (isProd) {
-    cookieOptions.push("Secure");
-  }
-  setHeader("Set-Cookie", cookieOptions.join("; "));
+async function clearSessionCookie() {
+  const isProd = process.env["NODE_ENV"] === "production";
+  const { deleteCookie } = await import("@tanstack/react-start/server");
+  deleteCookie(SESSION_COOKIE_NAME, {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: isProd,
+  });
 }
 
 // In-memory rate limiter: 5 failed attempts per email+IP per 15 minutes
@@ -109,18 +157,28 @@ function resetRateLimit(key: string) {
 
 const serverRegisterSchema = z.object({
   name: z.string().trim().min(2, "Name must be at least 2 characters").max(80),
-  email: z.string().trim().transform((val) => val.toLowerCase()).pipe(z.string().email("Enter a valid email")).pipe(z.string().max(255)),
+  email: z
+    .string()
+    .trim()
+    .transform((val) => val.toLowerCase())
+    .pipe(z.string().email("Enter a valid email"))
+    .pipe(z.string().max(255)),
   password: z.string().min(8, "Password must be at least 8 characters").max(72),
 });
 
 const serverLoginSchema = z.object({
-  email: z.string().trim().transform((val) => val.toLowerCase()).pipe(z.string().email("Enter a valid email")).pipe(z.string().max(255)),
+  email: z
+    .string()
+    .trim()
+    .transform((val) => val.toLowerCase())
+    .pipe(z.string().email("Enter a valid email"))
+    .pipe(z.string().max(255)),
   password: z.string().min(1, "Password is required").max(72),
 });
 
-export const getSessionFn = async () => {
+export const getSessionFn = createServerFn({ method: "GET" }).handler(async () => {
   const cookieHeader = getHeader("cookie");
-  const payload = parseSessionFromHeader(cookieHeader);
+  const payload = await parseSessionFromHeader(cookieHeader);
   if (!payload) return null;
 
   const user = await prisma.user.findUnique({
@@ -129,89 +187,103 @@ export const getSessionFn = async () => {
   });
 
   return user;
-};
+});
 
-export const loginFn = async (data: z.infer<typeof serverLoginSchema>) => {
-  const parsed = serverLoginSchema.safeParse(data);
-  if (!parsed.success) {
-    throw new Error("Invalid email or password");
-  }
+export const loginFn = createServerFn({ method: "POST" })
+  .validator(serverLoginSchema)
+  .handler(async ({ data }) => {
+    const parsed = serverLoginSchema.safeParse(data);
+    if (!parsed.success) {
+      throw new Error("Invalid email or password");
+    }
 
-  const clientIp = getHeader("x-forwarded-for") || getHeader("x-real-ip") || "unknown-ip";
-  const rateLimitKey = `${parsed.data.email}:${clientIp}`;
+    const clientIp = getHeader("x-forwarded-for") || getHeader("x-real-ip") || "unknown-ip";
+    const rateLimitKey = `${parsed.data.email}:${clientIp}`;
 
-  if (!checkRateLimit(rateLimitKey)) {
-    throw new Error("Too many failed login attempts. Please try again in 15 minutes.");
-  }
+    if (!checkRateLimit(rateLimitKey)) {
+      throw new Error("Too many failed login attempts. Please try again in 15 minutes.");
+    }
 
-  const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
-  if (!user) {
-    recordFailedAttempt(rateLimitKey);
-    throw new Error("Invalid email or password");
-  }
+    const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+    if (!user) {
+      recordFailedAttempt(rateLimitKey);
+      throw new Error("Invalid email or password");
+    }
 
-  const valid = await bcrypt.compare(parsed.data.password, user.passwordHash);
-  if (!valid) {
-    recordFailedAttempt(rateLimitKey);
-    throw new Error("Invalid email or password");
-  }
+    const valid = await bcrypt.compare(parsed.data.password, user.passwordHash);
+    if (!valid) {
+      recordFailedAttempt(rateLimitKey);
+      throw new Error("Invalid email or password");
+    }
 
-  resetRateLimit(rateLimitKey);
+    resetRateLimit(rateLimitKey);
 
-  const token = createSessionToken(user.id);
-  setSessionCookie(token);
+    const token = await createSessionToken(user.id);
+    await setSessionCookie(token);
 
-  return { id: user.id, name: user.name, email: user.email };
-};
-
-export const registerFn = async (data: z.infer<typeof serverRegisterSchema>) => {
-  const parsed = serverRegisterSchema.safeParse(data);
-  if (!parsed.success) {
-    throw new Error(parsed.error.issues[0]?.message ?? "Invalid registration details");
-  }
-
-  const existing = await prisma.user.findUnique({ where: { email: parsed.data.email } });
-  if (existing) {
-    throw new Error("This email is already registered");
-  }
-
-  const passwordHash = await bcrypt.hash(parsed.data.password, 12);
-
-  const result = await prisma.$transaction(async (tx) => {
-    const user = await tx.user.create({
-      data: {
-        name: parsed.data.name,
-        email: parsed.data.email,
-        passwordHash,
-      },
-    });
-
-    const family = await tx.family.create({
-      data: {
-        name: `${parsed.data.name}'s Family`,
-        ownerId: user.id,
-      },
-    });
-
-    await tx.familyMember.create({
-      data: {
-        familyId: family.id,
-        userId: user.id,
-        displayName: parsed.data.name,
-        role: "OWNER",
-      },
-    });
-
-    return user;
+    return { id: user.id, name: user.name, email: user.email };
   });
 
-  const token = createSessionToken(result.id);
-  setSessionCookie(token);
+export const registerFn = createServerFn({ method: "POST" })
+  .validator(serverRegisterSchema)
+  .handler(async ({ data }) => {
+    const parsed = serverRegisterSchema.safeParse(data);
+    if (!parsed.success) {
+      throw new Error(parsed.error.issues[0]?.message ?? "Invalid registration details");
+    }
 
-  return { id: result.id, name: result.name, email: result.email };
-};
+    const existing = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+    if (existing) {
+      throw new Error("This email is already registered");
+    }
 
-export const logoutFn = async () => {
-  clearSessionCookie();
+    const passwordHash = await bcrypt.hash(parsed.data.password, 12);
+
+    const result = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          name: parsed.data.name,
+          email: parsed.data.email,
+          passwordHash,
+        },
+      });
+
+      const family = await tx.family.create({
+        data: {
+          name: `${parsed.data.name}'s Family`,
+          ownerId: user.id,
+        },
+      });
+
+      await tx.familyMember.create({
+        data: {
+          familyId: family.id,
+          userId: user.id,
+          displayName: parsed.data.name,
+          role: "OWNER",
+        },
+      });
+
+      await tx.category.createMany({
+        data: DEFAULT_CATEGORIES.map((category) => ({
+          familyId: family.id,
+          name: category.name,
+          color: category.color,
+          icon: category.icon,
+          isDefault: true,
+        })),
+      });
+
+      return user;
+    });
+
+    const token = await createSessionToken(result.id);
+    await setSessionCookie(token);
+
+    return { id: result.id, name: result.name, email: result.email };
+  });
+
+export const logoutFn = createServerFn({ method: "POST" }).handler(async () => {
+  await clearSessionCookie();
   return { success: true };
-};
+});
