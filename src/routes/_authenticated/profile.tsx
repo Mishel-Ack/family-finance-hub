@@ -60,7 +60,7 @@ function ProfilePage() {
 
   const membersQuery = useQuery({
     queryKey: ["members", family?.id],
-    queryFn: () => (family?.id ? listFamilyMembers(family.id) : Promise.resolve([])),
+    queryFn: () => (family?.id ? listFamilyMembers() : Promise.resolve([])),
     enabled: Boolean(family?.id),
   });
 
@@ -68,7 +68,7 @@ function ProfilePage() {
     mutationFn: async () => {
       const parsed = profileSchema.safeParse({ name });
       if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Invalid name");
-      await updateProfileName(user!.id, parsed.data.name);
+      await updateProfileName(parsed.data.name);
     },
     onSuccess: async () => {
       setError("");
@@ -82,7 +82,7 @@ function ProfilePage() {
     mutationFn: async () => {
       const trimmed = familyName.trim();
       if (trimmed.length < 2) throw new Error("Family name must be at least 2 characters");
-      await renameFamily(family!.id, trimmed);
+      await renameFamily(trimmed);
     },
     onSuccess: async () => {
       toast.success("Family name updated");
@@ -95,7 +95,7 @@ function ProfilePage() {
     mutationFn: async () => {
       const trimmed = memberName.trim();
       if (trimmed.length < 2) throw new Error("Member name must be at least 2 characters");
-      await addFamilyMember(family!.id, trimmed, memberRole);
+      await addFamilyMember(trimmed, memberRole as any);
     },
     onSuccess: () => {
       setMemberName("");

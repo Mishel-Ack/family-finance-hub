@@ -37,18 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useAuth } from "@/hooks/useAuth";
-import { getMonthlySummary } from "@/services/report";
-import {
-  deleteBudgetCategory,
-  listBudgetCategories,
-  upsertBudget,
-  upsertBudgetCategory,
-} from "@/services/budget";
-import { CATEGORIES, MONTHS } from "@/lib/constants";
-import { formatINR } from "@/lib/format";
-import { STATUS_META } from "@/lib/calculations";
-import { budgetSchema, categoryLimitSchema } from "@/lib/validations";
+import { listCategories, createCategory } from "@/services/category";
 
 export const Route = createFileRoute("/_authenticated/budgets")({
   head: () => ({
@@ -77,16 +66,27 @@ function BudgetsPage() {
   const [totalInput, setTotalInput] = useState("");
   const [totalError, setTotalError] = useState("");
   const [catDialog, setCatDialog] = useState(false);
-  const [editing, setEditing] = useState<{ id?: string; category: string; limit: string } | null>(
+  const [editing, setEditing] = useState<{ id?: string; categoryId: string; limit: string } | null>(
     null,
   );
   const [catError, setCatError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; category: string } | null>(null);
 
+  // New category state
+  const [newCatName, setNewCatName] = useState("");
+  const [newCatColor, setNewCatColor] = useState("#3b82f6");
+
+  const categoriesQuery = useQuery({
+    queryKey: ["categories", family?.id],
+    queryFn: () => listCategories(),
+    enabled: Boolean(family?.id),
+  });
+  const categoryOptions = categoriesQuery.data ?? [];
+
   const key = ["summary", family?.id, month, year];
   const query = useQuery({
     queryKey: key,
-    queryFn: () => getMonthlySummary(family!.id, month, year),
+    queryFn: () => getMonthlySummary(month, year),
     enabled: Boolean(family?.id),
   });
   const summary = query.data;
@@ -97,6 +97,7 @@ function BudgetsPage() {
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["summary"] });
+    void queryClient.invalidateQueries({ queryKey: ["categories"] });
   };
 
   const saveBudget = useMutation({
@@ -109,7 +110,7 @@ function BudgetsPage() {
       if (!parsed.success) {
         throw new Error(parsed.error.issues[0]?.message ?? "Invalid budget");
       }
-      return upsertBudget(family!.id, month, year, parsed.data.totalLimit);
+      return upsertBudget(month, year, parsed.data.totalLimit);
     },
     onSuccess: () => {
       setTotalError("");
@@ -119,17 +120,17 @@ function BudgetsPage() {
     onError: (error: Error) => setTotalError(error.message),
   });
 
-  const saveCategory = useMutation({
+  const saveCategoryLimit = useMutation({
     mutationFn: async () => {
       if (!editing) return;
       const parsed = categoryLimitSchema.safeParse({
-        category: editing.category,
+        categoryId: editing.categoryId,
         limitAmount: Number(editing.limit),
       });
       if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Invalid limit");
       let budgetId = summary?.budgetId ?? null;
       if (!budgetId) throw new Error("Create the monthly budget first");
-      await upsertBudgetCategory(budgetId, parsed.data.category, parsed.data.limitAmount);
+      await upsertBudgetCategory(budgetId, parsed.data.categoryId, parsed.data.limitAmount);
     },
     onSuccess: () => {
       setCatError("");
@@ -139,6 +140,19 @@ function BudgetsPage() {
       invalidate();
     },
     onError: (error: Error) => setCatError(error.message),
+  });
+
+  const handleCreateCategory = useMutation({
+    mutationFn: async () => {
+      if (!newCatName.trim()) throw new Error("Category name is required");
+      await createCategory({ name: newCatName.trim(), color: newCatColor });
+    },
+    onSuccess: () => {
+      setNewCatName("");
+      toast.success("Category created");
+      invalidate();
+    },
+    onError: (error: Error) => toast.error(error.message),
   });
 
   const removeCategory = useMutation({
@@ -151,17 +165,18 @@ function BudgetsPage() {
     onError: (error: Error) => toast.error(error.message),
   });
 
-  const openCategoryDialog = async (category?: string) => {
+  const openCategoryDialog = async (categoryId?: string) => {
     setCatError("");
     if (!summary?.budgetId) {
       toast.error("Create the monthly budget first");
       return;
     }
     const rows = await listBudgetCategories(summary.budgetId);
-    const existing = category ? rows.find((r) => r.category === category) : undefined;
+    const existing = categoryId ? rows.find((r) => r.category_id === categoryId) : undefined;
+    const defaultCatId = categoryId || categoryOptions[0]?.id || "";
     setEditing({
       ...(existing ? { id: existing.id } : {}),
-      category: category ?? CATEGORIES[0],
+      categoryId: defaultCatId,
       limit: existing ? String(existing.limit_amount) : "",
     });
     setCatDialog(true);
@@ -250,7 +265,7 @@ function BudgetsPage() {
               ) : (
                 <ul className="space-y-4">
                   {withLimits.map((c) => (
-                    <li key={c.category} className="space-y-2">
+                    <li key={c.categoryId} className="space-y-2">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">{c.category}</span>
@@ -267,7 +282,7 @@ function BudgetsPage() {
                             variant="ghost"
                             aria-label={`Edit ${c.category} limit`}
                             disabled={!canEdit}
-                            onClick={() => void openCategoryDialog(c.category)}
+                            onClick={() => void openCategoryDialog(c.categoryId)}
                           >
                             <Pencil className="h-4 w-4" />
                           </Button>
@@ -278,7 +293,7 @@ function BudgetsPage() {
                             disabled={!canEdit}
                             onClick={async () => {
                               const rows = await listBudgetCategories(summary.budgetId!);
-                              const row = rows.find((r) => r.category === c.category);
+                              const row = rows.find((r) => r.category_id === c.categoryId);
                               if (row) setDeleteTarget({ id: row.id, category: c.category });
                             }}
                           >
@@ -298,6 +313,35 @@ function BudgetsPage() {
               )}
             </CardContent>
           </Card>
+
+          {canEdit ? (
+            <Card className="shadow-soft">
+              <CardHeader>
+                <CardTitle className="text-base">Manage Custom Categories</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    placeholder="New category name"
+                    value={newCatName}
+                    onChange={(e) => setNewCatName(e.target.value)}
+                  />
+                  <Input
+                    type="color"
+                    className="w-16 h-10 p-1 cursor-pointer"
+                    value={newCatColor}
+                    onChange={(e) => setNewCatColor(e.target.value)}
+                  />
+                  <Button
+                    onClick={() => handleCreateCategory.mutate()}
+                    disabled={handleCreateCategory.isPending}
+                  >
+                    <Plus className="mr-1 h-4 w-4" /> Create Category
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
         </>
       ) : null}
 
@@ -311,16 +355,16 @@ function BudgetsPage() {
             <div className="space-y-1.5">
               <Label htmlFor="cat">Category</Label>
               <Select
-                value={editing?.category ?? CATEGORIES[0]}
-                onValueChange={(v) => setEditing((e) => (e ? { ...e, category: v } : e))}
+                value={editing?.categoryId ?? categoryOptions[0]?.id ?? ""}
+                onValueChange={(v) => setEditing((e) => (e ? { ...e, categoryId: v } : e))}
               >
                 <SelectTrigger id="cat">
-                  <SelectValue />
+                  <SelectValue placeholder="Select a category" />
                 </SelectTrigger>
                 <SelectContent>
-                  {CATEGORIES.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
+                  {categoryOptions.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -344,7 +388,7 @@ function BudgetsPage() {
             <Button variant="outline" onClick={() => setCatDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={() => saveCategory.mutate()} disabled={saveCategory.isPending}>
+            <Button onClick={() => saveCategoryLimit.mutate()} disabled={saveCategoryLimit.isPending}>
               Save limit
             </Button>
           </DialogFooter>

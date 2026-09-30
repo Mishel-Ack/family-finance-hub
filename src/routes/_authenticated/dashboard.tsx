@@ -40,14 +40,14 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 function DashboardPage() {
-  const { family, profile } = useAuth();
+  const { family, profile, user } = useAuth();
   const now = new Date();
   const month = now.getMonth() + 1;
   const year = now.getFullYear();
 
   const query = useQuery({
     queryKey: ["summary", family?.id, month, year],
-    queryFn: () => getMonthlySummary(family!.id, month, year),
+    queryFn: () => getMonthlySummary(month, year),
     enabled: Boolean(family?.id),
   });
 

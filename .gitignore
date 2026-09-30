@@ -30,3 +30,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Environment & Databases
+.env
+.env.*
+!.env.example
+prisma/dev.db
+prisma/dev.db-journal
+

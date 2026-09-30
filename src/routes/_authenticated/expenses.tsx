@@ -45,11 +45,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
-import { createExpense, deleteExpense, listExpenses, updateExpense } from "@/services/expense";
-import { CATEGORIES } from "@/lib/constants";
-import { formatDate, formatINR, todayISO } from "@/lib/format";
-import { expenseSchema } from "@/lib/validations";
-import type { Expense } from "@/types";
+import { listCategories } from "@/services/category";
+import { listFamilyMembers } from "@/services/family";
 
 export const Route = createFileRoute("/_authenticated/expenses")({
   head: () => ({
@@ -69,16 +66,8 @@ export const Route = createFileRoute("/_authenticated/expenses")({
   component: ExpensesPage,
 });
 
-const emptyForm = {
-  amount: "",
-  category: CATEGORIES[0] as string,
-  date: todayISO(),
-  description: "",
-  familyMember: "",
-};
-
 function ExpensesPage() {
-  const { family, user, canEdit } = useAuth();
+  const { family, canEdit } = useAuth();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
@@ -87,15 +76,36 @@ function ExpensesPage() {
   const [sort, setSort] = useState("date-desc");
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState({ ...emptyForm });
+  const [form, setForm] = useState({
+    amount: "",
+    categoryId: "",
+    memberId: "",
+    date: todayISO(),
+    description: "",
+  });
   const [error, setError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Expense | null>(null);
 
-  const query = useQuery({
-    queryKey: ["expenses", family?.id],
-    queryFn: () => listExpenses(family!.id),
+  const categoriesQuery = useQuery({
+    queryKey: ["categories", family?.id],
+    queryFn: () => listCategories(),
     enabled: Boolean(family?.id),
   });
+
+  const membersQuery = useQuery({
+    queryKey: ["members", family?.id],
+    queryFn: () => listFamilyMembers(),
+    enabled: Boolean(family?.id),
+  });
+
+  const query = useQuery({
+    queryKey: ["expenses", family?.id],
+    queryFn: () => listExpenses(),
+    enabled: Boolean(family?.id),
+  });
+
+  const categoryOptions = categoriesQuery.data ?? [];
+  const memberOptions = membersQuery.data ?? [];
 
   const rows = useMemo(() => {
     let list = query.data ?? [];
@@ -104,11 +114,11 @@ function ExpensesPage() {
       list = list.filter(
         (e) =>
           e.description.toLowerCase().includes(term) ||
-          e.category.toLowerCase().includes(term) ||
-          e.family_member.toLowerCase().includes(term),
+          (e.category_name ?? "").toLowerCase().includes(term) ||
+          (e.family_member ?? "").toLowerCase().includes(term),
       );
     }
-    if (category !== "all") list = list.filter((e) => e.category === category);
+    if (category !== "all") list = list.filter((e) => e.category_id === category || e.category === category);
     if (from) list = list.filter((e) => e.date >= from);
     if (to) list = list.filter((e) => e.date <= to);
     const sorted = [...list];
@@ -137,29 +147,36 @@ function ExpensesPage() {
 
   const save = useMutation({
     mutationFn: async () => {
+      const selectedCat = form.categoryId || categoryOptions[0]?.id || "";
       const parsed = expenseSchema.safeParse({
         amount: Number(form.amount),
-        category: form.category,
+        categoryId: selectedCat,
+        memberId: form.memberId || null,
         date: form.date,
         description: form.description,
-        familyMember: form.familyMember,
       });
       if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Invalid expense");
       const input = {
         amount: parsed.data.amount,
-        category: parsed.data.category,
+        categoryId: parsed.data.categoryId,
+        memberId: parsed.data.memberId ?? null,
         date: parsed.data.date,
         description: parsed.data.description ?? "",
-        familyMember: parsed.data.familyMember ?? "",
       };
       if (editId) await updateExpense(editId, input);
-      else await createExpense(family!.id, user!.id, input);
+      else await createExpense(input);
     },
     onSuccess: () => {
       toast.success(editId ? "Expense updated" : "Expense added");
       setOpen(false);
       setEditId(null);
-      setForm({ ...emptyForm });
+      setForm({
+        amount: "",
+        categoryId: "",
+        memberId: "",
+        date: todayISO(),
+        description: "",
+      });
       setError("");
       invalidate();
     },
@@ -178,7 +195,13 @@ function ExpensesPage() {
 
   const openCreate = () => {
     setEditId(null);
-    setForm({ ...emptyForm });
+    setForm({
+      amount: "",
+      categoryId: categoryOptions[0]?.id ?? "",
+      memberId: "",
+      date: todayISO(),
+      description: "",
+    });
     setError("");
     setOpen(true);
   };
@@ -187,10 +210,10 @@ function ExpensesPage() {
     setEditId(expense.id);
     setForm({
       amount: String(expense.amount),
-      category: expense.category,
+      categoryId: expense.category_id,
+      memberId: expense.member_id ?? "",
       date: expense.date,
       description: expense.description,
-      familyMember: expense.family_member,
     });
     setError("");
     setOpen(true);
@@ -227,9 +250,9 @@ function ExpensesPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All categories</SelectItem>
-                {CATEGORIES.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
+                {categoryOptions.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -414,16 +437,16 @@ function ExpensesPage() {
             <div className="space-y-1.5">
               <Label htmlFor="expense-category">Category</Label>
               <Select
-                value={form.category}
-                onValueChange={(v) => setForm({ ...form, category: v })}
+                value={form.categoryId}
+                onValueChange={(v) => setForm({ ...form, categoryId: v })}
               >
                 <SelectTrigger id="expense-category">
-                  <SelectValue />
+                  <SelectValue placeholder="Select a category" />
                 </SelectTrigger>
                 <SelectContent>
-                  {CATEGORIES.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
+                  {categoryOptions.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -450,13 +473,21 @@ function ExpensesPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="member">Family member</Label>
-              <Input
-                id="member"
-                maxLength={80}
-                placeholder="e.g. Priya"
-                value={form.familyMember}
-                onChange={(e) => setForm({ ...form, familyMember: e.target.value })}
-              />
+              <Select
+                value={form.memberId}
+                onValueChange={(v) => setForm({ ...form, memberId: v })}
+              >
+                <SelectTrigger id="member">
+                  <SelectValue placeholder="Attributed member (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {memberOptions.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.display_name || "Member"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
           </div>

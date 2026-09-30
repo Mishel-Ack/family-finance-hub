@@ -1,9 +1,13 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import type { SessionUser } from "@/services/auth.server";
-import { bootstrapUser, getMembership, getProfile } from "@/services/family";
+import { getSessionFn, logoutFn } from "@/services/auth.server";
+import { getMembership, getProfile } from "@/services/family";
 import type { Family, FamilyRole, Profile } from "@/types";
 
-const AUTH_KEY = "fb_user_session";
+interface SessionUser {
+  id: string;
+  name: string;
+  email: string;
+}
 
 interface AuthContextValue {
   session: SessionUser | null;
@@ -13,7 +17,6 @@ interface AuthContextValue {
   role: FamilyRole | null;
   loading: boolean;
   canEdit: boolean;
-  saveSession: (user: SessionUser) => Promise<void>;
   refresh: () => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -27,51 +30,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<FamilyRole | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const hydrate = async (activeSession: SessionUser | null) => {
-    if (!activeSession) {
-      setProfile(null);
-      setFamily(null);
-      setRole(null);
-      setLoading(false);
-      return;
-    }
+  const loadSession = async () => {
     try {
-      await bootstrapUser(activeSession.id, activeSession.name, activeSession.email);
+      const activeSession = await getSessionFn();
+      if (!activeSession) {
+        setSession(null);
+        setProfile(null);
+        setFamily(null);
+        setRole(null);
+        setLoading(false);
+        return;
+      }
+
+      setSession(activeSession);
+
       const [nextProfile, membership] = await Promise.all([
-        getProfile(activeSession.id),
-        getMembership(activeSession.id),
+        getProfile().catch(() => null),
+        getMembership().catch(() => null),
       ]);
+
       setProfile(nextProfile);
       setFamily(membership?.family ?? null);
       setRole((membership?.membership.role as FamilyRole) ?? null);
     } catch (error) {
-      console.error("Failed to load account", error);
+      console.error("Failed to load server session", error);
+      setSession(null);
+      setProfile(null);
+      setFamily(null);
+      setRole(null);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadSession = async () => {
-    try {
-      const raw = localStorage.getItem(AUTH_KEY);
-      const user: SessionUser | null = raw ? JSON.parse(raw) : null;
-      setSession(user);
-      await hydrate(user);
-    } catch {
-      setSession(null);
-      await hydrate(null);
     }
   };
 
   useEffect(() => {
     void loadSession();
   }, []);
-
-  const saveSession = async (user: SessionUser) => {
-    localStorage.setItem(AUTH_KEY, JSON.stringify(user));
-    setSession(user);
-    await hydrate(user);
-  };
 
   const value: AuthContextValue = {
     session,
@@ -81,12 +75,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     role,
     loading,
     canEdit: role !== null && role !== "VIEWER",
-    saveSession,
     refresh: async () => {
       await loadSession();
     },
     signOut: async () => {
-      localStorage.removeItem(AUTH_KEY);
+      await logoutFn();
       setSession(null);
       setProfile(null);
       setFamily(null);
