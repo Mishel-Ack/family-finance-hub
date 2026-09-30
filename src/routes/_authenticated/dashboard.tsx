@@ -80,7 +80,11 @@ function DashboardPage() {
       {summary ? (
         <>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard label="Monthly Budget" value={formatINR(summary.totalLimit)} icon={PiggyBank} />
+            <StatCard
+              label="Monthly Budget"
+              value={formatINR(summary.totalLimit)}
+              icon={PiggyBank}
+            />
             <StatCard
               label="Total Spent"
               value={formatINR(summary.totalSpent)}
@@ -99,7 +103,13 @@ function DashboardPage() {
               value={`${summary.percent.toFixed(1)}%`}
               hint={status?.label}
               icon={ReceiptIndianRupee}
-              tone={summary.percent >= 90 ? "destructive" : summary.percent >= 70 ? "warning" : "default"}
+              tone={
+                summary.percent >= 90
+                  ? "destructive"
+                  : summary.percent >= 70
+                    ? "warning"
+                    : "default"
+              }
             />
           </div>
 

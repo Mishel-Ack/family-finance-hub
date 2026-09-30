@@ -1,6 +1,7 @@
 import { getHeader } from "@/lib/http-utils";
 import { parseSessionFromHeader } from "@/services/auth.server";
 import { prisma } from "@/lib/prisma";
+import { httpError } from "@/lib/http-error";
 
 export type Role = "OWNER" | "ADMIN" | "MEMBER" | "VIEWER";
 
@@ -48,12 +49,7 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "expense:deleteOwn",
     "readAll",
   ]),
-  MEMBER: new Set<Action>([
-    "expense:create",
-    "expense:editOwn",
-    "expense:deleteOwn",
-    "readAll",
-  ]),
+  MEMBER: new Set<Action>(["expense:create", "expense:editOwn", "expense:deleteOwn", "readAll"]),
   VIEWER: new Set<Action>(["readAll"]),
 };
 
@@ -64,7 +60,7 @@ export function can(role: Role, action: Action): boolean {
 
 export function assertCan(role: Role, action: Action) {
   if (!can(role, action)) {
-    throw new Error(`Forbidden: Role ${role} is not permitted to perform ${action}`);
+    throw httpError("You do not have permission to perform this action", 403);
   }
 }
 
@@ -82,10 +78,10 @@ export interface AuthContext {
 
 export async function requireAuth(): Promise<AuthContext> {
   const cookieHeader = getHeader("cookie");
-  const payload = parseSessionFromHeader(cookieHeader);
+  const payload = await parseSessionFromHeader(cookieHeader);
 
   if (!payload || !payload.userId) {
-    throw new Error("Unauthorized: Please sign in to access this resource");
+    throw httpError("Please sign in to continue", 401);
   }
 
   const user = await prisma.user.findUnique({
@@ -94,16 +90,17 @@ export async function requireAuth(): Promise<AuthContext> {
   });
 
   if (!user) {
-    throw new Error("Unauthorized: Account not found");
+    throw httpError("Please sign in to continue", 401);
   }
 
   const membership = await prisma.familyMember.findFirst({
     where: { userId: user.id },
+    orderBy: { createdAt: "asc" },
     include: { family: true },
   });
 
   if (!membership || !membership.family) {
-    throw new Error("Unauthorized: No active family membership found for this user");
+    throw httpError("No family membership is available for this account", 401);
   }
 
   return {

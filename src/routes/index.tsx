@@ -55,9 +55,7 @@ function LandingPage() {
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
               <PiggyBank className="h-6 w-6" aria-hidden="true" />
             </span>
-            <span className="text-xl font-bold tracking-tight text-foreground">
-              FamilyBudget
-            </span>
+            <span className="text-xl font-bold tracking-tight text-foreground">FamilyBudget</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -92,15 +90,25 @@ function LandingPage() {
                 Every rupee, accounted for — together as a family.
               </h1>
               <p className="mt-6 text-lg text-primary-foreground/85 sm:text-xl">
-                FamilyBudget helps households set monthly spending targets, track category limits, receive smart overspending alerts, and visualize financial growth.
+                FamilyBudget helps households set monthly spending targets, track category limits,
+                receive smart overspending alerts, and visualize financial growth.
               </p>
               <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
-                <Button asChild size="lg" className="bg-white text-brand-deep hover:bg-white/90 font-semibold shadow-lift">
+                <Button
+                  asChild
+                  size="lg"
+                  className="bg-white text-brand-deep hover:bg-white/90 font-semibold shadow-lift"
+                >
                   <Link to="/auth">
                     Create Family Account <ArrowRight className="ml-2 h-5 w-5" />
                   </Link>
                 </Button>
-                <Button asChild variant="outline" size="lg" className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white font-medium">
+                <Button
+                  asChild
+                  variant="outline"
+                  size="lg"
+                  className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white font-medium"
+                >
                   <Link to="/auth">Login to App</Link>
                 </Button>
               </div>
@@ -128,7 +136,8 @@ function LandingPage() {
                   </div>
                   <h3 className="text-lg font-semibold text-foreground">Monthly Budgeting</h3>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Set overall family budgets per month and allocate specific limits to categories like Food, Bills, Healthcare, and Education.
+                    Set overall family budgets per month and allocate specific limits to categories
+                    like Food, Bills, Healthcare, and Education.
                   </p>
                 </CardContent>
               </Card>
@@ -140,7 +149,8 @@ function LandingPage() {
                   </div>
                   <h3 className="text-lg font-semibold text-foreground">Overspending Warnings</h3>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Automatic status tracking alerts you when spending hits 70%, 90%, or exceeds 100% of your allocated monthly limits.
+                    Automatic status tracking alerts you when spending hits 70%, 90%, or exceeds
+                    100% of your allocated monthly limits.
                   </p>
                 </CardContent>
               </Card>
@@ -150,9 +160,12 @@ function LandingPage() {
                   <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
                     <PieChart className="h-6 w-6" />
                   </div>
-                  <h3 className="text-lg font-semibold text-foreground">Visual Analytics & Reports</h3>
+                  <h3 className="text-lg font-semibold text-foreground">
+                    Visual Analytics & Reports
+                  </h3>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Explore spending distribution with interactive donut charts, monthly trends, and budget-vs-actual comparison bars powered by Recharts.
+                    Explore spending distribution with interactive donut charts, monthly trends, and
+                    budget-vs-actual comparison bars powered by Recharts.
                   </p>
                 </CardContent>
               </Card>
@@ -164,7 +177,8 @@ function LandingPage() {
                   </div>
                   <h3 className="text-lg font-semibold text-foreground">Family Architecture</h3>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Built with multi-member role hierarchy (Owner, Admin, Member, Viewer) so family members can collaborate securely.
+                    Built with multi-member role hierarchy (Owner, Admin, Member, Viewer) so family
+                    members can collaborate securely.
                   </p>
                 </CardContent>
               </Card>
@@ -176,7 +190,8 @@ function LandingPage() {
                   </div>
                   <h3 className="text-lg font-semibold text-foreground">Daily Expense Tracking</h3>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Log daily transactions with category tags, descriptions, dates, and member attribution. Filter, search, and sort instantly.
+                    Log daily transactions with category tags, descriptions, dates, and member
+                    attribution. Filter, search, and sort instantly.
                   </p>
                 </CardContent>
               </Card>
@@ -188,7 +203,8 @@ function LandingPage() {
                   </div>
                   <h3 className="text-lg font-semibold text-foreground">Row-Level Security</h3>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Strict PostgreSQL database policies guarantee that your family data remains private and strictly accessible only to authenticated family members.
+                    Strict PostgreSQL database policies guarantee that your family data remains
+                    private and strictly accessible only to authenticated family members.
                   </p>
                 </CardContent>
               </Card>
@@ -206,17 +222,21 @@ function LandingPage() {
                     Ready to transform how your family manages money?
                   </h3>
                   <p className="mt-3 text-muted-foreground">
-                    Join FamilyBudget today to get instant clarity on your monthly spending, category allocations, and budget progress.
+                    Join FamilyBudget today to get instant clarity on your monthly spending,
+                    category allocations, and budget progress.
                   </p>
                   <ul className="mt-6 space-y-2 text-sm font-medium text-foreground">
                     <li className="flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-primary" /> Full support for Indian Rupee (₹) formatting
+                      <CheckCircle2 className="h-4 w-4 text-primary" /> Full support for Indian
+                      Rupee (₹) formatting
                     </li>
                     <li className="flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-primary" /> Mobile and desktop optimized design
+                      <CheckCircle2 className="h-4 w-4 text-primary" /> Mobile and desktop optimized
+                      design
                     </li>
                     <li className="flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-primary" /> Instant budget over-allocation alerts
+                      <CheckCircle2 className="h-4 w-4 text-primary" /> Instant budget
+                      over-allocation alerts
                     </li>
                   </ul>
                 </div>
@@ -237,7 +257,10 @@ function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-border/40 bg-background py-8 text-center text-sm text-muted-foreground">
         <div className="mx-auto max-w-7xl px-4">
-          <p>© {new Date().getFullYear()} FamilyBudget. All rights reserved. Professional Family Budget & Expense Platform.</p>
+          <p>
+            © {new Date().getFullYear()} FamilyBudget. All rights reserved. Professional Family
+            Budget & Expense Platform.
+          </p>
         </div>
       </footer>
     </div>

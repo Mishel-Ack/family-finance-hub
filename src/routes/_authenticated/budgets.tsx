@@ -37,7 +37,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { listCategories, createCategory } from "@/services/category";
+import {
+  listCategories,
+  createCategory,
+  updateCategory,
+  archiveCategory,
+} from "@/services/category";
+import { useAuth } from "@/hooks/useAuth";
+import { getMonthlySummary } from "@/services/report";
+import {
+  upsertBudget,
+  upsertBudgetCategory,
+  deleteBudgetCategory,
+  listBudgetCategories,
+} from "@/services/budget";
+import { budgetSchema, categoryLimitSchema } from "@/lib/validations";
+import { MONTHS } from "@/lib/constants";
+import { STATUS_META } from "@/lib/calculations";
+import { formatINR } from "@/lib/format";
 
 export const Route = createFileRoute("/_authenticated/budgets")({
   head: () => ({
@@ -58,7 +75,8 @@ export const Route = createFileRoute("/_authenticated/budgets")({
 });
 
 function BudgetsPage() {
-  const { family, canEdit } = useAuth();
+  const { family, canEdit, role } = useAuth();
+  const canManageCategories = role === "OWNER" || role === "ADMIN";
   const queryClient = useQueryClient();
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -128,7 +146,7 @@ function BudgetsPage() {
         limitAmount: Number(editing.limit),
       });
       if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Invalid limit");
-      let budgetId = summary?.budgetId ?? null;
+      const budgetId = summary?.budgetId ?? null;
       if (!budgetId) throw new Error("Create the monthly budget first");
       await upsertBudgetCategory(budgetId, parsed.data.categoryId, parsed.data.limitAmount);
     },
@@ -165,6 +183,25 @@ function BudgetsPage() {
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const saveCategory = useMutation({
+    mutationFn: (category: { id: string; name: string; color: string }) =>
+      updateCategory(category.id, { name: category.name, color: category.color }),
+    onSuccess: () => {
+      toast.success("Category updated");
+      invalidate();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const archiveCustomCategory = useMutation({
+    mutationFn: (id: string) => archiveCategory(id),
+    onSuccess: () => {
+      toast.success("Category archived");
+      invalidate();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   const openCategoryDialog = async (categoryId?: string) => {
     setCatError("");
     if (!summary?.budgetId) {
@@ -190,7 +227,16 @@ function BudgetsPage() {
       <PageHeader
         title="Budgets"
         description="Set your monthly budget and category-wise limits."
-        actions={<MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />}
+        actions={
+          <MonthSelector
+            month={month}
+            year={year}
+            onChange={(m, y) => {
+              setMonth(m);
+              setYear(y);
+            }}
+          />
+        }
       />
 
       {query.isLoading ? <CardSkeletons count={3} /> : null}
@@ -314,7 +360,7 @@ function BudgetsPage() {
             </CardContent>
           </Card>
 
-          {canEdit ? (
+          {canManageCategories ? (
             <Card className="shadow-soft">
               <CardHeader>
                 <CardTitle className="text-base">Manage Custom Categories</CardTitle>
@@ -339,6 +385,45 @@ function BudgetsPage() {
                     <Plus className="mr-1 h-4 w-4" /> Create Category
                   </Button>
                 </div>
+                <ul className="divide-y rounded-lg border">
+                  {categoryOptions.map((category) => (
+                    <li key={category.id} className="flex flex-wrap items-center gap-2 p-3">
+                      <Input
+                        aria-label={`${category.name} category name`}
+                        defaultValue={category.name}
+                        maxLength={40}
+                        className="min-w-36 flex-1"
+                        onBlur={(event) => {
+                          const name = event.currentTarget.value.trim();
+                          if (name && name !== category.name) {
+                            saveCategory.mutate({ id: category.id, name, color: category.color });
+                          }
+                        }}
+                      />
+                      <Input
+                        type="color"
+                        aria-label={`${category.name} category color`}
+                        className="h-10 w-14 cursor-pointer p-1"
+                        value={category.color}
+                        onChange={(event) =>
+                          saveCategory.mutate({
+                            id: category.id,
+                            name: category.name,
+                            color: event.target.value,
+                          })
+                        }
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={archiveCustomCategory.isPending}
+                        onClick={() => archiveCustomCategory.mutate(category.id)}
+                      >
+                        Archive
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
               </CardContent>
             </Card>
           ) : null}
@@ -388,7 +473,10 @@ function BudgetsPage() {
             <Button variant="outline" onClick={() => setCatDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={() => saveCategoryLimit.mutate()} disabled={saveCategoryLimit.isPending}>
+            <Button
+              onClick={() => saveCategoryLimit.mutate()}
+              disabled={saveCategoryLimit.isPending}
+            >
               Save limit
             </Button>
           </DialogFooter>
@@ -405,7 +493,9 @@ function BudgetsPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => deleteTarget && removeCategory.mutate(deleteTarget.id)}>
+            <AlertDialogAction
+              onClick={() => deleteTarget && removeCategory.mutate(deleteTarget.id)}
+            >
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

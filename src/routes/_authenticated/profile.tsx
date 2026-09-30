@@ -26,6 +26,7 @@ import {
   updateProfileName,
 } from "@/services/family";
 import { profileSchema } from "@/lib/validations";
+import type { FamilyRole } from "@/types";
 
 export const Route = createFileRoute("/_authenticated/profile")({
   head: () => ({
@@ -95,7 +96,7 @@ function ProfilePage() {
     mutationFn: async () => {
       const trimmed = memberName.trim();
       if (trimmed.length < 2) throw new Error("Member name must be at least 2 characters");
-      await addFamilyMember(trimmed, memberRole as any);
+      await addFamilyMember(trimmed, memberRole as FamilyRole);
     },
     onSuccess: () => {
       setMemberName("");
@@ -116,7 +117,10 @@ function ProfilePage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Settings" description="Manage your account profile, family household, and members." />
+      <PageHeader
+        title="Settings"
+        description="Manage your account profile, family household, and members."
+      />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="shadow-soft">
@@ -212,9 +216,7 @@ function ProfilePage() {
           </div>
 
           {membersQuery.isLoading ? <LoadingState label="Loading members…" /> : null}
-          {membersQuery.isError ? (
-            <ErrorState onRetry={() => void membersQuery.refetch()} />
-          ) : null}
+          {membersQuery.isError ? <ErrorState onRetry={() => void membersQuery.refetch()} /> : null}
           {membersQuery.data ? (
             membersQuery.data.length === 0 ? (
               <EmptyState title="No family members yet" />

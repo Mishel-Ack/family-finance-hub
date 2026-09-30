@@ -4,22 +4,22 @@ import { can, assertCan } from "@/lib/authz";
 
 describe("Integration Isolation & Auth Tests", () => {
   beforeAll(() => {
-    process.env.JWT_SECRET = "test-secret-key-at-least-32-characters-long";
+    process.env["JWT_SECRET"] = "test-secret-key-at-least-32-characters-long";
   });
 
-  it("verifies and parses session token correctly", () => {
+  it("verifies and parses session token correctly", async () => {
     const userId = "test-user-id-123";
-    const token = createSessionToken(userId);
+    const token = await createSessionToken(userId);
     const cookieHeader = `fb_session=${token}`;
 
-    const session = parseSessionFromHeader(cookieHeader);
+    const session = await parseSessionFromHeader(cookieHeader);
     expect(session).not.toBeNull();
     expect(session?.userId).toBe(userId);
   });
 
-  it("rejects invalid or missing session cookies", () => {
-    expect(parseSessionFromHeader(null)).toBeNull();
-    expect(parseSessionFromHeader("fb_session=invalid-token")).toBeNull();
+  it("rejects invalid or missing session cookies", async () => {
+    expect(await parseSessionFromHeader(null)).toBeNull();
+    expect(await parseSessionFromHeader("fb_session=invalid-token")).toBeNull();
   });
 
   it("prevents MEMBER role from managing budgets or changing roles", () => {

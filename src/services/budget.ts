@@ -3,6 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { requireMember } from "@/lib/authz";
 import { fromPaise, toPaise } from "@/lib/money";
 import type { Budget, BudgetCategory } from "@/types";
+import { budgetSchema, amountSchema } from "@/lib/validations";
+import { z } from "zod";
+import { notFound } from "@/lib/http-error";
 
 export const getBudgetFn = createServerFn({ method: "GET" })
   .validator((d: { month: number; year: number }) => d)
@@ -32,7 +35,7 @@ export const getBudgetFn = createServerFn({ method: "GET" })
   });
 
 export const upsertBudgetFn = createServerFn({ method: "POST" })
-  .validator((d: { month: number; year: number; totalLimit: number }) => d)
+  .validator(budgetSchema)
   .handler(async ({ data }) => {
     const auth = await requireMember("budget:manage");
 
@@ -81,7 +84,7 @@ export const deleteBudgetFn = createServerFn({ method: "POST" })
     });
 
     if (!b) {
-      throw new Error("Budget not found"); // 404
+      throw notFound("Budget not found");
     }
 
     await prisma.budget.delete({ where: { id: budgetId } });
@@ -97,7 +100,7 @@ export const listBudgetCategoriesFn = createServerFn({ method: "GET" })
     });
 
     if (!b) {
-      throw new Error("Budget not found");
+      throw notFound("Budget not found");
     }
 
     const cats = await prisma.budgetCategory.findMany({
@@ -123,7 +126,13 @@ export const listBudgetCategoriesFn = createServerFn({ method: "GET" })
   });
 
 export const upsertBudgetCategoryFn = createServerFn({ method: "POST" })
-  .validator((d: { budgetId: string; categoryId: string; limitAmount: number }) => d)
+  .validator(
+    z.object({
+      budgetId: z.string().min(1),
+      categoryId: z.string().min(1),
+      limitAmount: amountSchema,
+    }),
+  )
   .handler(async ({ data }) => {
     const auth = await requireMember("budget:manage");
 
@@ -132,8 +141,14 @@ export const upsertBudgetCategoryFn = createServerFn({ method: "POST" })
     });
 
     if (!b) {
-      throw new Error("Budget not found");
+      throw notFound("Budget not found");
     }
+
+    const category = await prisma.category.findFirst({
+      where: { id: data.categoryId, familyId: auth.familyId, archivedAt: null },
+      select: { id: true },
+    });
+    if (!category) throw notFound("Category not found");
 
     if (data.limitAmount <= 0) {
       throw new Error("Category limit must be greater than 0");
@@ -169,7 +184,7 @@ export const deleteBudgetCategoryFn = createServerFn({ method: "POST" })
     });
 
     if (!bc) {
-      throw new Error("Budget category not found");
+      throw notFound("Budget category not found");
     }
 
     await prisma.budgetCategory.delete({ where: { id } });

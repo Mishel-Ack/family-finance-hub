@@ -1,16 +1,3 @@
-export const CATEGORIES = [
-  "Food",
-  "Transport",
-  "Shopping",
-  "Bills",
-  "Education",
-  "Healthcare",
-  "Entertainment",
-  "Other",
-] as const;
-
-export type Category = (typeof CATEGORIES)[number];
-
 export const CATEGORY_COLORS: Record<string, string> = {
   Food: "var(--chart-1)",
   Transport: "var(--chart-2)",

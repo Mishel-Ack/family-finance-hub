@@ -1,10 +1,16 @@
 import { createServerFn } from "@tanstack/react-start";
 import { prisma } from "@/lib/prisma";
 import { requireMember } from "@/lib/authz";
-import { DEFAULT_CATEGORIES } from "@/lib/money";
+import { DEFAULT_CATEGORIES } from "@/lib/default-categories";
+import type { Prisma } from "@prisma/client";
 import type { Category, CategoryInput } from "@/types";
+import { z } from "zod";
+import { notFound } from "@/lib/http-error";
 
-export async function ensureDefaultCategories(tx: any, familyId: string) {
+export async function ensureDefaultCategories(
+  tx: Prisma.TransactionClient | typeof prisma,
+  familyId: string,
+) {
   const existingCount = await tx.category.count({ where: { familyId } });
   if (existingCount === 0) {
     for (const cat of DEFAULT_CATEGORIES) {
@@ -49,7 +55,16 @@ export const listCategoriesFn = createServerFn({ method: "GET" }).handler(async 
 });
 
 export const createCategoryFn = createServerFn({ method: "POST" })
-  .validator((input: CategoryInput) => input)
+  .validator(
+    z.object({
+      name: z.string().trim().min(1).max(40),
+      color: z
+        .string()
+        .regex(/^#[0-9a-fA-F]{6}$/)
+        .optional(),
+      icon: z.string().max(40).optional(),
+    }),
+  )
   .handler(async ({ data }) => {
     const auth = await requireMember("category:manage");
     const name = data.name.trim();
@@ -91,7 +106,19 @@ export const createCategoryFn = createServerFn({ method: "POST" })
   });
 
 export const updateCategoryFn = createServerFn({ method: "POST" })
-  .validator((d: { id: string; input: Partial<CategoryInput> }) => d)
+  .validator(
+    z.object({
+      id: z.string().min(1),
+      input: z.object({
+        name: z.string().trim().min(1).max(40).optional(),
+        color: z
+          .string()
+          .regex(/^#[0-9a-fA-F]{6}$/)
+          .optional(),
+        icon: z.string().max(40).optional(),
+      }),
+    }),
+  )
   .handler(async ({ data }) => {
     const auth = await requireMember("category:manage");
 
@@ -100,10 +127,10 @@ export const updateCategoryFn = createServerFn({ method: "POST" })
     });
 
     if (!cat) {
-      throw new Error("Category not found");
+      throw notFound("Category not found");
     }
 
-    const updateData: any = {};
+    const updateData: { name?: string; color?: string; icon?: string } = {};
     if (data.input.name && data.input.name.trim()) {
       updateData.name = data.input.name.trim();
     }
@@ -126,7 +153,7 @@ export const archiveCategoryFn = createServerFn({ method: "POST" })
     });
 
     if (!cat) {
-      throw new Error("Category not found");
+      throw notFound("Category not found");
     }
 
     await prisma.category.update({

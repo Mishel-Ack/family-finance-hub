@@ -47,6 +47,10 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { listCategories } from "@/services/category";
 import { listFamilyMembers } from "@/services/family";
+import { listExpenses, createExpense, updateExpense, deleteExpense } from "@/services/expense";
+import { expenseSchema } from "@/lib/validations";
+import { formatDate, formatINR, todayISO } from "@/lib/format";
+import type { Expense } from "@/types";
 
 export const Route = createFileRoute("/_authenticated/expenses")({
   head: () => ({
@@ -118,7 +122,8 @@ function ExpensesPage() {
           (e.family_member ?? "").toLowerCase().includes(term),
       );
     }
-    if (category !== "all") list = list.filter((e) => e.category_id === category || e.category === category);
+    if (category !== "all")
+      list = list.filter((e) => e.category_id === category || e.category === category);
     if (from) list = list.filter((e) => e.date >= from);
     if (to) list = list.filter((e) => e.date <= to);
     const sorted = [...list];
