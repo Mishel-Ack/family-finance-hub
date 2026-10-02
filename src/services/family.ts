@@ -2,8 +2,15 @@ import { createServerFn } from "@tanstack/react-start";
 import { prisma } from "@/lib/prisma";
 import { requireMember, assertCan, Role } from "@/lib/authz";
 import type { Family, FamilyMember, Profile } from "@/types";
-import { z } from "zod";
+import {
+  familyRenameSchema,
+  idSchema,
+  memberAddSchema,
+  memberRoleChangeSchema,
+  profileNameSchema,
+} from "@/lib/validations";
 import { httpError, notFound } from "@/lib/http-error";
+import { assertSameOrigin } from "@/lib/http-utils";
 
 export const getProfileFn = createServerFn({ method: "GET" }).handler(async () => {
   const auth = await requireMember("readAll");
@@ -11,9 +18,10 @@ export const getProfileFn = createServerFn({ method: "GET" }).handler(async () =
 });
 
 export const updateProfileNameFn = createServerFn({ method: "POST" })
-  .validator((name: string) => name)
+  .validator(profileNameSchema)
   .handler(async ({ data: name }) => {
-    const auth = await requireMember();
+    assertSameOrigin();
+    const auth = await requireMember("family:rename");
 
     const trimmed = name.trim();
     if (trimmed.length < 2) {
@@ -78,13 +86,9 @@ export const listFamilyMembersFn = createServerFn({ method: "GET" }).handler(asy
 });
 
 export const addFamilyMemberFn = createServerFn({ method: "POST" })
-  .validator(
-    z.object({
-      displayName: z.string().trim().min(2).max(80),
-      role: z.enum(["ADMIN", "MEMBER", "VIEWER", "OWNER"]),
-    }),
-  )
+  .validator(memberAddSchema)
   .handler(async ({ data }) => {
+    assertSameOrigin();
     const auth = await requireMember("member:add");
 
     if (data.role === "OWNER") assertCan(auth.role, "member:changeRole");
@@ -104,8 +108,9 @@ export const addFamilyMemberFn = createServerFn({ method: "POST" })
   });
 
 export const removeFamilyMemberFn = createServerFn({ method: "POST" })
-  .validator((id: string) => id)
+  .validator(idSchema)
   .handler(async ({ data: id }) => {
+    assertSameOrigin();
     const auth = await requireMember("member:remove");
 
     const target = await prisma.familyMember.findFirst({
@@ -120,12 +125,34 @@ export const removeFamilyMemberFn = createServerFn({ method: "POST" })
       throw httpError("The family OWNER cannot be removed", 403);
     }
 
-    await prisma.familyMember.delete({ where: { id } });
+    const deleted = await prisma.familyMember.deleteMany({
+      where: { id, familyId: auth.familyId, role: { not: "OWNER" } },
+    });
+    if (deleted.count === 0) {
+      const current = await prisma.familyMember.findFirst({
+        where: { id, familyId: auth.familyId },
+      });
+      if (!current) throw notFound("Family member not found");
+      throw httpError("The family OWNER cannot be removed", 403);
+    }
+  });
+
+export const changeFamilyMemberRoleFn = createServerFn({ method: "POST" })
+  .validator(memberRoleChangeSchema)
+  .handler(async ({ data }) => {
+    assertSameOrigin();
+    const auth = await requireMember("member:changeRole");
+    const updated = await prisma.familyMember.updateMany({
+      where: { id: data.id, familyId: auth.familyId },
+      data: { role: data.role },
+    });
+    if (updated.count === 0) throw notFound("Family member not found");
   });
 
 export const renameFamilyFn = createServerFn({ method: "POST" })
-  .validator((name: string) => name)
+  .validator(familyRenameSchema)
   .handler(async ({ data: name }) => {
+    assertSameOrigin();
     const auth = await requireMember("family:rename");
 
     const trimmed = name.trim();
@@ -162,6 +189,10 @@ export function addFamilyMember(displayName: string, role: Role) {
 
 export function removeFamilyMember(id: string) {
   return removeFamilyMemberFn({ data: id });
+}
+
+export function changeFamilyMemberRole(id: string, role: Role) {
+  return changeFamilyMemberRoleFn({ data: { id, role } });
 }
 
 export function renameFamily(name: string) {

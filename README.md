@@ -15,14 +15,20 @@ FamilyBudget is a family budgeting app built with TanStack Start, React 19, Type
 
 4. Start the app with `npm run dev`.
 
-Use PostgreSQL for both URLs and keep the test database separate from development data. The test suite currently covers money calculations, permission rules, and session token behavior. PostgreSQL service-isolation integration tests are still outstanding.
+Use PostgreSQL for both URLs and keep the test database separate from development data. Create the test database once before running tests:
+
+```sql
+CREATE DATABASE family_budget_test;
+```
+
+Set `DATABASE_URL_TEST` to that database. The Vitest global setup refuses a URL that resolves to the same database as `DATABASE_URL`, applies migrations once, and the integration suite truncates its tables between cases.
 
 ## Architecture and security
 
 - PostgreSQL via Prisma is the only data layer.
 - Registration creates a user, family, OWNER membership, and the eight default categories in one transaction.
 - Login and registration validate input on the server. Passwords use bcryptjs with cost 12. Login failures are rate limited in memory to five failures per email and IP per 15 minutes; this needs Redis for multi-instance deployments.
-- Auth uses a signed, seven-day `fb_session` cookie with `HttpOnly`, `SameSite=Lax`, and `Secure` in production. Signing uses Web Crypto. `JWT_SECRET` has no fallback and the server fails to start without it.
+- Auth uses a signed, seven-day session cookie with `HttpOnly`, `SameSite=Lax`, and `Secure` in production. Set `SESSION_COOKIE_NAME` to a valid cookie name and provide a `JWT_SECRET` of at least 32 characters. State-changing server functions reject missing or mismatched `Origin` headers; set `APP_ORIGIN` to the public origin in production.
 - Server functions resolve the user and their family membership from the cookie. Family, member, expense, budget, category, and report reads/writes are scoped to that membership. Roles are OWNER, ADMIN, MEMBER, and VIEWER.
 - Money is stored as integer paise. Inputs reject non-positive values and more than two decimal places; display values are formatted in Indian Rupees.
 - Categories are stored per family and can be created, renamed, recolored, and archived by OWNER and ADMIN members.
@@ -38,10 +44,29 @@ npm test
 npx tsc --noEmit
 ```
 
-## Deployment note
+## Deploy to Render
 
-The Vite/Nitro preset currently produces a Cloudflare Worker build. The standard Prisma Client in this project is not a supported direct database client for Cloudflare Workers. Before deployment, use a Node.js runtime or configure Prisma's supported Workers approach with Accelerate or a compatible driver adapter and the required Worker environment bindings. Do not deploy this standard Prisma connection to Workers unchanged.
+This project builds with Nitro's `node-server` preset and uses the standard Prisma Client. The health check at `/api/health` returns HTTP 200 when PostgreSQL is reachable and HTTP 503 otherwise.
+
+1. Create a Render **Web Service** from this repository and select **Docker** as the runtime. Render builds from the included `Dockerfile`.
+2. Add a PostgreSQL database in Render and set these service environment variables:
+   - `DATABASE_URL`: Render's internal PostgreSQL connection string.
+   - `JWT_SECRET`: a strong random secret with at least 32 characters.
+   - `APP_ORIGIN`: the public HTTPS origin, for example `https://familybudget.onrender.com`.
+   - `NODE_ENV`: `production`.
+   - `SESSION_COOKIE_NAME`: optional; defaults to `fb_session`.
+3. Deploy. The container runs `prisma migrate deploy` once at startup before launching the Node server; database migrations are not run per request.
+4. Check `https://<your-service>.onrender.com/api/health` after deployment.
+
+For a local production smoke check, build with `npm run build`, set the production environment variables, run `npx prisma migrate deploy`, and start with `npm run start`.
 
 ## Data migration note
 
-The checked-in migration creates the hardened schema for a fresh database. The repository does not yet contain an upgrade migration that converts an older database's Float rupee amounts and string categories/member names into paise and relational category/member IDs. Back up existing data and complete that migration before applying this schema to a database containing legacy records.
+For a legacy PostgreSQL database using the former Float and text fields, first create a separate target database and apply the current migrations to it. Set `DATABASE_URL_LEGACY` to the old database and `DATABASE_URL` to the migrated target, then review a dry run before importing:
+
+```sh
+node --experimental-strip-types scripts/migrate-legacy-data.ts --dry-run
+node --experimental-strip-types scripts/migrate-legacy-data.ts
+```
+
+The importer rounds rupees to paise, maps category names per family, matches member names case-insensitively, and leaves unmatched members null while reporting counts. Keep backups of both databases. The source and target need matching User and Family IDs; this script does not migrate accounts or reconstruct those records.

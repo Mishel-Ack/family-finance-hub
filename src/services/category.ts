@@ -3,9 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { requireMember } from "@/lib/authz";
 import { DEFAULT_CATEGORIES } from "@/lib/default-categories";
 import type { Prisma } from "@prisma/client";
+import { Prisma as PrismaRuntime } from "@prisma/client";
 import type { Category, CategoryInput } from "@/types";
-import { z } from "zod";
-import { notFound } from "@/lib/http-error";
+import { categoryCreateSchema, categoryUpdateSchema, idSchema } from "@/lib/validations";
+import { httpError, notFound } from "@/lib/http-error";
+import { assertCategoryInFamily } from "@/lib/guards";
+import { assertSameOrigin } from "@/lib/http-utils";
 
 export async function ensureDefaultCategories(
   tx: Prisma.TransactionClient | typeof prisma,
@@ -55,17 +58,9 @@ export const listCategoriesFn = createServerFn({ method: "GET" }).handler(async 
 });
 
 export const createCategoryFn = createServerFn({ method: "POST" })
-  .validator(
-    z.object({
-      name: z.string().trim().min(1).max(40),
-      color: z
-        .string()
-        .regex(/^#[0-9a-fA-F]{6}$/)
-        .optional(),
-      icon: z.string().max(40).optional(),
-    }),
-  )
+  .validator(categoryCreateSchema)
   .handler(async ({ data }) => {
+    assertSameOrigin();
     const auth = await requireMember("category:manage");
     const name = data.name.trim();
     if (!name) throw new Error("Category name is required");
@@ -106,29 +101,12 @@ export const createCategoryFn = createServerFn({ method: "POST" })
   });
 
 export const updateCategoryFn = createServerFn({ method: "POST" })
-  .validator(
-    z.object({
-      id: z.string().min(1),
-      input: z.object({
-        name: z.string().trim().min(1).max(40).optional(),
-        color: z
-          .string()
-          .regex(/^#[0-9a-fA-F]{6}$/)
-          .optional(),
-        icon: z.string().max(40).optional(),
-      }),
-    }),
-  )
+  .validator(categoryUpdateSchema)
   .handler(async ({ data }) => {
+    assertSameOrigin();
     const auth = await requireMember("category:manage");
 
-    const cat = await prisma.category.findFirst({
-      where: { id: data.id, familyId: auth.familyId },
-    });
-
-    if (!cat) {
-      throw notFound("Category not found");
-    }
+    await assertCategoryInFamily(auth, data.id, false);
 
     const updateData: { name?: string; color?: string; icon?: string } = {};
     if (data.input.name && data.input.name.trim()) {
@@ -137,29 +115,50 @@ export const updateCategoryFn = createServerFn({ method: "POST" })
     if (data.input.color) updateData.color = data.input.color;
     if (data.input.icon) updateData.icon = data.input.icon;
 
-    return await prisma.category.update({
-      where: { id: data.id },
+    const updated = await prisma.category.updateMany({
+      where: { id: data.id, familyId: auth.familyId },
       data: updateData,
     });
+    if (updated.count === 0) throw notFound("Category not found");
+    return prisma.category.findFirst({ where: { id: data.id, familyId: auth.familyId } });
   });
 
 export const archiveCategoryFn = createServerFn({ method: "POST" })
-  .validator((id: string) => id)
+  .validator(idSchema)
   .handler(async ({ data: id }) => {
+    assertSameOrigin();
     const auth = await requireMember("category:manage");
 
-    const cat = await prisma.category.findFirst({
+    const archived = await prisma.category.updateMany({
       where: { id, familyId: auth.familyId },
-    });
-
-    if (!cat) {
-      throw notFound("Category not found");
-    }
-
-    await prisma.category.update({
-      where: { id },
       data: { archivedAt: new Date() },
     });
+    if (archived.count === 0) throw notFound("Category not found");
+  });
+
+export const deleteCategoryFn = createServerFn({ method: "POST" })
+  .validator(idSchema)
+  .handler(async ({ data: id }) => {
+    assertSameOrigin();
+    const auth = await requireMember("category:manage");
+    await assertCategoryInFamily(auth, id, false);
+    const usedCount = await prisma.expense.count({
+      where: { familyId: auth.familyId, categoryId: id },
+    });
+    if (usedCount > 0) {
+      throw httpError("This category has expenses. Archive it instead.", 409);
+    }
+    try {
+      const deleted = await prisma.category.deleteMany({
+        where: { id, familyId: auth.familyId },
+      });
+      if (deleted.count === 0) throw notFound("Category not found");
+    } catch (error: unknown) {
+      if (error instanceof PrismaRuntime.PrismaClientKnownRequestError && error.code === "P2003") {
+        throw httpError("This category has expenses. Archive it instead.", 409);
+      }
+      throw error;
+    }
   });
 
 export function listCategories() {
@@ -176,4 +175,8 @@ export function updateCategory(id: string, input: Partial<CategoryInput>) {
 
 export function archiveCategory(id: string) {
   return archiveCategoryFn({ data: id });
+}
+
+export function deleteCategory(id: string) {
+  return deleteCategoryFn({ data: id });
 }

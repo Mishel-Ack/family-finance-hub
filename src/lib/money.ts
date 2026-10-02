@@ -1,9 +1,13 @@
 export function toPaise(rupees: number): number {
-  if (!Number.isFinite(rupees)) throw new Error("Enter a valid amount");
-  if (Math.round(rupees * 100) / 100 !== rupees) {
+  if (!Number.isFinite(rupees) || rupees < 0) throw new Error("Enter a valid non-negative amount");
+  const fixedDecimal = rupees.toFixed(2);
+  const roundedRupees = Number(fixedDecimal);
+  if (Math.abs(roundedRupees - rupees) > Number.EPSILON * Math.max(1, Math.abs(rupees)) * 2) {
     throw new Error("Amount cannot have more than 2 decimal places");
   }
-  return Math.round(rupees * 100);
+  const paise = Math.round(rupees * 100);
+  if (!Number.isSafeInteger(paise)) throw new Error("Amount is too large");
+  return paise;
 }
 
 export function fromPaise(paise: number): number {

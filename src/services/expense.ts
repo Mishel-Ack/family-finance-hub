@@ -5,11 +5,14 @@ import { prisma } from "@/lib/prisma";
 import { requireMember, can } from "@/lib/authz";
 import { fromPaise, toPaise } from "@/lib/money";
 import type { Expense, ExpenseInput } from "@/types";
-import { expenseSchema } from "@/lib/validations";
+import { dateRangeSchema, expenseSchema, expenseUpdateSchema, idSchema } from "@/lib/validations";
 import { httpError, notFound } from "@/lib/http-error";
+import { assertCategoryInFamily, assertMemberInFamily } from "@/lib/guards";
+import { utcCalendarDate } from "@/lib/dates";
+import { assertSameOrigin } from "@/lib/http-utils";
 
 export const listExpensesFn = createServerFn({ method: "GET" })
-  .validator((d?: { from?: string | undefined; to?: string | undefined }) => d)
+  .validator(dateRangeSchema.optional())
   .handler(async ({ data }) => {
     const auth = await requireMember("readAll");
 
@@ -54,27 +57,20 @@ export const listExpensesFn = createServerFn({ method: "GET" })
 export const createExpenseFn = createServerFn({ method: "POST" })
   .validator(expenseSchema)
   .handler(async ({ data }) => {
+    assertSameOrigin();
     const auth = await requireMember("expense:create");
-
-    if (data.amount <= 0) {
-      throw new Error("Expense amount must be greater than 0");
-    }
 
     const amountPaise = toPaise(data.amount);
 
     let memberId: string | null = data.memberId ?? null;
-    if (!memberId) {
-      memberId = auth.memberId;
+    if (!memberId) memberId = auth.memberId;
+    if (memberId !== auth.memberId && !can(auth.role, "expense:editAny")) {
+      throw httpError("Only an ADMIN or OWNER can record an expense for another member", 403);
     }
-
-    const [category, member] = await Promise.all([
-      prisma.category.findFirst({
-        where: { id: data.categoryId, familyId: auth.familyId, archivedAt: null },
-      }),
-      prisma.familyMember.findFirst({ where: { id: memberId, familyId: auth.familyId } }),
+    await Promise.all([
+      assertCategoryInFamily(auth, data.categoryId),
+      assertMemberInFamily(auth, memberId),
     ]);
-    if (!category) throw notFound("Category not found");
-    if (!member) throw notFound("Family member not found");
 
     await prisma.expense.create({
       data: {
@@ -83,90 +79,61 @@ export const createExpenseFn = createServerFn({ method: "POST" })
         memberId,
         categoryId: data.categoryId,
         amountPaise,
-        date: new Date(data.date),
+        date: utcCalendarDate(data.date),
         description: data.description ?? "",
       },
     });
   });
 
 export const updateExpenseFn = createServerFn({ method: "POST" })
-  .validator(z.object({ id: z.string().min(1), input: expenseSchema }))
+  .validator(expenseUpdateSchema)
   .handler(async ({ data }) => {
+    assertSameOrigin();
     const auth = await requireMember();
-
-    const existing = await prisma.expense.findFirst({
-      where: { id: data.id, familyId: auth.familyId },
-    });
-
-    if (!existing) {
-      throw notFound("Expense not found");
+    if (!can(auth.role, "expense:editAny") && !can(auth.role, "expense:editOwn")) {
+      throw httpError("You cannot edit expenses", 403);
     }
-
-    // Check authorization: editAny or editOwn
-    const isOwnerOfExpense = existing.userId === auth.userId;
-    if (isOwnerOfExpense) {
-      if (!can(auth.role, "expense:editOwn") && !can(auth.role, "expense:editAny")) {
-        throw httpError("You cannot edit this expense", 403);
-      }
-    } else {
-      if (!can(auth.role, "expense:editAny")) {
-        throw httpError("You cannot edit another member's expense", 403);
-      }
+    await assertCategoryInFamily(auth, data.input.categoryId);
+    const memberId = data.input.memberId ?? auth.memberId;
+    if (memberId !== auth.memberId && !can(auth.role, "expense:editAny")) {
+      throw httpError("Only an ADMIN or OWNER can record an expense for another member", 403);
     }
+    await assertMemberInFamily(auth, memberId);
 
-    if (data.input.amount <= 0) {
-      throw new Error("Expense amount must be greater than 0");
-    }
-
-    const category = await prisma.category.findFirst({
-      where: { id: data.input.categoryId, familyId: auth.familyId, archivedAt: null },
-      select: { id: true },
-    });
-    if (!category) throw notFound("Category not found");
-    const memberId = data.input.memberId ?? existing.memberId ?? auth.memberId;
-    const member = await prisma.familyMember.findFirst({
-      where: { id: memberId, familyId: auth.familyId },
-      select: { id: true },
-    });
-    if (!member) throw notFound("Family member not found");
-
-    await prisma.expense.update({
-      where: { id: data.id },
+    const result = await prisma.expense.updateMany({
+      where: {
+        id: data.id,
+        familyId: auth.familyId,
+        ...(!can(auth.role, "expense:editAny") ? { userId: auth.userId } : {}),
+      },
       data: {
         amountPaise: toPaise(data.input.amount),
         categoryId: data.input.categoryId,
         memberId,
-        date: new Date(data.input.date),
+        date: utcCalendarDate(data.input.date),
         description: data.input.description ?? "",
       },
     });
+    if (result.count === 0) throw notFound("Expense not found");
   });
 
 export const deleteExpenseFn = createServerFn({ method: "POST" })
-  .validator((id: string) => id)
+  .validator(idSchema)
   .handler(async ({ data: id }) => {
+    assertSameOrigin();
     const auth = await requireMember();
+    if (!can(auth.role, "expense:deleteAny") && !can(auth.role, "expense:deleteOwn")) {
+      throw httpError("You cannot delete expenses", 403);
+    }
 
-    const existing = await prisma.expense.findFirst({
-      where: { id, familyId: auth.familyId },
+    const result = await prisma.expense.deleteMany({
+      where: {
+        id,
+        familyId: auth.familyId,
+        ...(!can(auth.role, "expense:deleteAny") ? { userId: auth.userId } : {}),
+      },
     });
-
-    if (!existing) {
-      throw notFound("Expense not found");
-    }
-
-    const isOwnerOfExpense = existing.userId === auth.userId;
-    if (isOwnerOfExpense) {
-      if (!can(auth.role, "expense:deleteOwn") && !can(auth.role, "expense:deleteAny")) {
-        throw httpError("You cannot delete this expense", 403);
-      }
-    } else {
-      if (!can(auth.role, "expense:deleteAny")) {
-        throw httpError("You cannot delete another member's expense", 403);
-      }
-    }
-
-    await prisma.expense.delete({ where: { id } });
+    if (result.count === 0) throw notFound("Expense not found");
   });
 
 // Client helper wrappers
