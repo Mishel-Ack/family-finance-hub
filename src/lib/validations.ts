@@ -96,6 +96,28 @@ export const registerServerSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters").max(72),
 });
 export const loginServerSchema = loginSchema;
+export const inviteRoleSchema = z.enum(["ADMIN", "MEMBER", "VIEWER"]);
+export const inviteCreateSchema = z.object({
+  role: inviteRoleSchema,
+  email: z
+    .string()
+    .trim()
+    .transform((value) => value.toLowerCase())
+    .pipe(z.string().email().max(255))
+    .optional()
+    .or(z.literal(""))
+    .transform((value) => (value ? value : undefined)),
+});
+export const inviteTokenSchema = z
+  .string()
+  .min(32)
+  .max(128)
+  .regex(/^[A-Za-z0-9_-]+$/, "Invalid invite token");
+export const acceptInviteSchema = z.object({
+  token: inviteTokenSchema,
+  leaveExistingFamily: z.boolean().optional().default(false),
+});
+export const registerWithInviteSchema = registerServerSchema.extend({ token: inviteTokenSchema });
 export const memberAddSchema = z.object({
   displayName: z.string().trim().min(2).max(80),
   role: z.enum(["ADMIN", "MEMBER", "VIEWER", "OWNER"]),

@@ -11,6 +11,10 @@ export type Action =
   | "member:add"
   | "member:remove"
   | "member:changeRole"
+  | "invite:create"
+  | "invite:createAdmin"
+  | "invite:list"
+  | "invite:revoke"
   | "budget:manage"
   | "category:manage"
   | "expense:create"
@@ -27,6 +31,10 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "member:add",
     "member:remove",
     "member:changeRole",
+    "invite:create",
+    "invite:createAdmin",
+    "invite:list",
+    "invite:revoke",
     "budget:manage",
     "category:manage",
     "expense:create",
@@ -39,6 +47,9 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
   ADMIN: new Set<Action>([
     "family:rename",
     "member:add",
+    "invite:create",
+    "invite:list",
+    "invite:revoke",
     "member:remove",
     "budget:manage",
     "category:manage",
