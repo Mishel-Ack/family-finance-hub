@@ -9,9 +9,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { loginSchema, registerSchema } from "@/lib/validations";
 import { useAuth } from "@/hooks/useAuth";
-import { loginFn, registerFn } from "@/services/auth.server";
+import { loginFn, registerFn, registerWithInviteFn } from "@/services/auth.server";
+import { z } from "zod";
 
 export const Route = createFileRoute("/auth")({
+  validateSearch: z.object({ invite: z.string().optional() }),
   ssr: false,
   head: () => ({
     meta: [
@@ -35,6 +37,7 @@ type Errors = Record<string, string>;
 
 function AuthPage() {
   const navigate = useNavigate();
+  const { invite } = Route.useSearch();
   const { session, refresh } = useAuth();
   const [tab, setTab] = useState("login");
   const [busy, setBusy] = useState(false);
@@ -64,6 +67,10 @@ function AuthPage() {
       await loginFn({ data: parsed.data });
       await refresh();
       toast.success("Welcome back!");
+      if (invite) {
+        void navigate({ to: "/join/$token", params: { token: invite }, replace: true });
+        return;
+      }
       void navigate({ to: "/dashboard", replace: true });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Invalid email or password");
@@ -82,13 +89,16 @@ function AuthPage() {
     setErrors({});
     setBusy(true);
     try {
-      await registerFn({
-        data: {
-          name: parsed.data.name,
-          email: parsed.data.email,
-          password: parsed.data.password,
-        },
-      });
+      const registration = {
+        name: parsed.data.name,
+        email: parsed.data.email,
+        password: parsed.data.password,
+      };
+      if (invite) {
+        await registerWithInviteFn({ data: { ...registration, token: invite } });
+      } else {
+        await registerFn({ data: registration });
+      }
       await refresh();
       toast.success("Account created successfully!");
       void navigate({ to: "/dashboard", replace: true });
@@ -203,7 +213,13 @@ function AuthPage() {
                     />
                   </Field>
                   <Button type="submit" className="w-full" disabled={busy}>
-                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create account"}
+                    {busy ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : invite ? (
+                      "Create account and join family"
+                    ) : (
+                      "Create account"
+                    )}
                   </Button>
                 </form>
               </TabsContent>

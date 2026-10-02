@@ -5,6 +5,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { DEFAULT_CATEGORIES } from "@/lib/default-categories";
 import { loginServerSchema, registerServerSchema } from "@/lib/validations";
 import { assertSameOrigin } from "@/lib/http-utils";
+import { acceptInviteInTransaction, assertInviteAcceptRateLimit } from "@/lib/invite-acceptance";
+import { registerWithInviteSchema } from "@/lib/validations";
 
 const SESSION_COOKIE_NAME = process.env["SESSION_COOKIE_NAME"] ?? "fb_session";
 const SEVEN_DAYS_SECONDS = 60 * 60 * 24 * 7;
@@ -299,3 +301,54 @@ export const logoutFn = createServerFn({ method: "POST" }).handler(async () => {
   await clearSessionCookie();
   return { success: true };
 });
+
+export const registerWithInviteFn = createServerFn({ method: "POST" })
+  .validator(registerWithInviteSchema)
+  .handler(async ({ data }) => {
+    assertSameOrigin();
+    const parsed = registerWithInviteSchema.safeParse(data);
+    if (!parsed.success) {
+      throw new Error(parsed.error.issues[0]?.message ?? "Invalid registration details");
+    }
+    assertInviteAcceptRateLimit(
+      getHeader("x-forwarded-for") ?? getHeader("x-real-ip") ?? "unknown",
+    );
+
+    const existing = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+    if (existing)
+      throw new Error("This email is already registered. Sign in to accept the invite.");
+
+    const passwordHash = await bcrypt.hash(parsed.data.password, 12);
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            name: parsed.data.name,
+            email: parsed.data.email,
+            passwordHash,
+          },
+        });
+        await acceptInviteInTransaction(tx, {
+          token: parsed.data.token,
+          userId: user.id,
+          userEmail: user.email,
+          displayName: user.name,
+          leaveExistingFamily: false,
+        });
+        return user;
+      });
+      const token = await createSessionToken(result.id);
+      await setSessionCookie(token);
+      return { id: result.id, name: result.name, email: result.email };
+    } catch (error: unknown) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "P2002"
+      ) {
+        throw new Error("This email is already registered.");
+      }
+      throw error;
+    }
+  });

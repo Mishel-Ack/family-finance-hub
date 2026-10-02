@@ -14,6 +14,12 @@ enum Role {
   VIEWER
 }
 
+enum InviteRole {
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
 model User {
   id           String         @id @default(uuid())
   name         String
@@ -24,6 +30,7 @@ model User {
   families     Family[]       @relation("FamilyOwner")
   memberships  FamilyMember[]
   expenses     Expense[]
+  usedInvites  Invite[]
 }
 
 model Family {
@@ -37,23 +44,45 @@ model Family {
   categories Category[]
   budgets    Budget[]
   expenses   Expense[]
+  invites    Invite[]
 
   @@index([ownerId])
 }
 
 model FamilyMember {
-  id          String    @id @default(uuid())
-  familyId    String
-  family      Family    @relation(fields: [familyId], references: [id], onDelete: Cascade)
-  userId      String?
-  user        User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  displayName String    @default("")
-  role        Role      @default(MEMBER)
-  createdAt   DateTime  @default(now())
-  expenses    Expense[]
+  id             String    @id @default(uuid())
+  familyId       String
+  family         Family    @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName    String    @default("")
+  role           Role      @default(MEMBER)
+  createdAt      DateTime  @default(now())
+  expenses       Expense[]
+  createdInvites Invite[]
 
   @@unique([familyId, userId])
+  @@unique([userId])
   @@index([familyId])
+}
+
+model Invite {
+  id                String       @id @default(uuid())
+  familyId          String
+  family            Family       @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  createdByMemberId String
+  createdByMember   FamilyMember @relation(fields: [createdByMemberId], references: [id], onDelete: Cascade)
+  role              InviteRole
+  tokenHash         String       @unique
+  email             String?
+  expiresAt         DateTime
+  usedAt            DateTime?
+  usedByUserId      String?
+  usedByUser        User?        @relation(fields: [usedByUserId], references: [id], onDelete: SetNull)
+  revokedAt         DateTime?
+  createdAt         DateTime     @default(now())
+
+  @@index([familyId, revokedAt, usedAt, expiresAt])
 }
 
 model Category {
