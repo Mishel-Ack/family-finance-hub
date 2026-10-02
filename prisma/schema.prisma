@@ -72,6 +72,7 @@ model Category {
 
   @@unique([familyId, name])
   @@index([familyId])
+  @@index([familyId, archivedAt])
 }
 
 model Budget {
@@ -90,14 +91,14 @@ model Budget {
 }
 
 model BudgetCategory {
-  id              String   @id @default(uuid())
-  budgetId        String
-  budget          Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
-  categoryId      String
-  category        Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  id               String   @id @default(uuid())
+  budgetId         String
+  budget           Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  categoryId       String
+  category         Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   limitAmountPaise Int
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   @@unique([budgetId, categoryId])
   @@index([budgetId])
@@ -112,7 +113,7 @@ model Expense {
   memberId    String?
   member      FamilyMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
   categoryId  String
-  category    Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category    Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   amountPaise Int
   date        DateTime      @default(now())
   description String        @default("")
@@ -121,5 +122,6 @@ model Expense {
 
   @@index([familyId, date])
   @@index([familyId, categoryId])
+  @@index([familyId, memberId, date])
   @@index([memberId])
 }

@@ -5,6 +5,7 @@ import { listCategories } from "./category";
 import { statusFor, usagePercent } from "@/lib/calculations";
 import { fromPaise } from "@/lib/money";
 import type { Expense } from "@/types";
+import { monthYearSchema, yearSchema } from "@/lib/validations";
 
 export function monthRange(month: number, year: number) {
   const from = new Date(Date.UTC(year, month - 1, 1)).toISOString().slice(0, 10);
@@ -47,7 +48,7 @@ export interface MonthlySummary {
 }
 
 export const getMonthlySummaryFn = createServerFn({ method: "GET" })
-  .validator((d: { month: number; year: number }) => d)
+  .validator(monthYearSchema)
   .handler(async ({ data: { month, year } }): Promise<MonthlySummary> => {
     const { from, to } = monthRange(month, year);
     const [budget, familyCategories, expenses] = await Promise.all([
@@ -113,7 +114,7 @@ export const getMonthlySummaryFn = createServerFn({ method: "GET" })
   });
 
 export const getYearlyTrendFn = createServerFn({ method: "GET" })
-  .validator((year: number) => year)
+  .validator(yearSchema)
   .handler(async ({ data: year }) => {
     const from = `${year}-01-01`;
     const to = `${year}-12-31`;

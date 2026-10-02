@@ -31,9 +31,33 @@ export const amountSchema = z
   .number({ invalid_type_error: "Enter a valid amount" })
   .finite()
   .positive("Amount must be greater than 0")
-  .refine((v) => Number((v * 100).toFixed(2)) % 1 === 0, {
-    message: "Amount cannot have more than 2 decimal places",
-  });
+  .max(10_000_000, "Amount cannot exceed ₹1 crore")
+  .refine(
+    (v) =>
+      Number(v.toFixed(2)) === v ||
+      Math.abs(Number(v.toFixed(2)) - v) <= Number.EPSILON * Math.max(1, Math.abs(v)) * 2,
+    {
+      message: "Amount cannot have more than 2 decimal places",
+    },
+  );
+
+export const idSchema = z.string().uuid("Invalid ID");
+export const idsSchema = z.object({ id: idSchema });
+export const monthYearSchema = z.object({
+  month: z.number().int().min(1).max(12),
+  year: z.number().int().min(2000).max(2100),
+});
+export const yearSchema = z.number().int().min(2000).max(2100);
+export const dateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => {
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  }, "Enter a valid calendar date");
+export const dateRangeSchema = z
+  .object({ from: dateSchema.optional(), to: dateSchema.optional() })
+  .refine(({ from, to }) => !from || !to || from <= to, "Start date must be on or before end date");
 
 export const budgetSchema = z.object({
   month: z.number().int().min(1).max(12),
@@ -50,10 +74,51 @@ export const expenseSchema = z.object({
   amount: amountSchema,
   categoryId: z.string().min(1, "Category is required"),
   memberId: z.string().optional().nullable(),
-  date: z.string().min(1, "Date is required"),
+  date: dateSchema,
   description: z.string().trim().max(200).optional().default(""),
 });
 
 export const profileSchema = z.object({
   name: z.string().trim().min(2, "Name must be at least 2 characters").max(80),
+});
+
+export const profileUpdateSchema = profileSchema;
+export const profileNameSchema = profileSchema.shape.name;
+export const familyRenameSchema = z.string().trim().min(2).max(80);
+export const registerServerSchema = z.object({
+  name: z.string().trim().min(2, "Name must be at least 2 characters").max(80),
+  email: z
+    .string()
+    .trim()
+    .transform((value) => value.toLowerCase())
+    .pipe(z.string().email("Enter a valid email"))
+    .pipe(z.string().max(255)),
+  password: z.string().min(8, "Password must be at least 8 characters").max(72),
+});
+export const loginServerSchema = loginSchema;
+export const memberAddSchema = z.object({
+  displayName: z.string().trim().min(2).max(80),
+  role: z.enum(["ADMIN", "MEMBER", "VIEWER", "OWNER"]),
+});
+export const memberRoleChangeSchema = z.object({
+  id: idSchema,
+  role: z.enum(["ADMIN", "MEMBER", "VIEWER", "OWNER"]),
+});
+export const categoryCreateSchema = z.object({
+  name: z.string().trim().min(1).max(40),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .optional(),
+  icon: z.string().max(40).optional(),
+});
+export const categoryUpdateSchema = z.object({
+  id: idSchema,
+  input: categoryCreateSchema.partial(),
+});
+export const expenseUpdateSchema = z.object({ id: idSchema, input: expenseSchema });
+export const budgetCategoryInputSchema = z.object({
+  budgetId: idSchema,
+  categoryId: idSchema,
+  limitAmount: amountSchema,
 });

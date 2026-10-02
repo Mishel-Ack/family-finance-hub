@@ -1,7 +1,20 @@
 import "./lib/error-capture";
 
-if (!process.env["JWT_SECRET"]?.trim()) {
-  throw new Error("JWT_SECRET must be configured before the application starts.");
+if ((process.env["JWT_SECRET"]?.length ?? 0) < 32) {
+  throw new Error(
+    "JWT_SECRET must be configured with at least 32 characters before the application starts.",
+  );
+}
+const sessionCookieName = process.env["SESSION_COOKIE_NAME"] ?? "fb_session";
+if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/.test(sessionCookieName)) {
+  throw new Error("SESSION_COOKIE_NAME must be a valid cookie name.");
+}
+if (process.env["NODE_ENV"] === "production") {
+  try {
+    if (new URL(process.env["APP_ORIGIN"] ?? "").protocol !== "https:") throw new Error();
+  } catch {
+    throw new Error("APP_ORIGIN must be a valid HTTPS origin in production.");
+  }
 }
 
 import { consumeLastCapturedError } from "./lib/error-capture";

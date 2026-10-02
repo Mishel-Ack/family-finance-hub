@@ -1,11 +1,12 @@
 import { getHeader } from "@/lib/http-utils";
 import bcrypt from "bcryptjs";
-import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createServerFn } from "@tanstack/react-start";
 import { DEFAULT_CATEGORIES } from "@/lib/default-categories";
+import { loginServerSchema, registerServerSchema } from "@/lib/validations";
+import { assertSameOrigin } from "@/lib/http-utils";
 
-const SESSION_COOKIE_NAME = "fb_session";
+const SESSION_COOKIE_NAME = process.env["SESSION_COOKIE_NAME"] ?? "fb_session";
 const SEVEN_DAYS_SECONDS = 60 * 60 * 24 * 7;
 const encoder = new TextEncoder();
 
@@ -99,6 +100,10 @@ export async function createSessionToken(userId: string): Promise<string> {
 }
 
 async function setSessionCookie(token: string) {
+  if (process.env["NODE_ENV"] === "test" && cookieHandlerForTests) {
+    cookieHandlerForTests();
+    return;
+  }
   const isProd = process.env["NODE_ENV"] === "production";
   const { setCookie } = await import("@tanstack/react-start/server");
   setCookie(SESSION_COOKIE_NAME, token, {
@@ -111,6 +116,10 @@ async function setSessionCookie(token: string) {
 }
 
 async function clearSessionCookie() {
+  if (process.env["NODE_ENV"] === "test" && cookieHandlerForTests) {
+    cookieHandlerForTests();
+    return;
+  }
   const isProd = process.env["NODE_ENV"] === "production";
   const { deleteCookie } = await import("@tanstack/react-start/server");
   deleteCookie(SESSION_COOKIE_NAME, {
@@ -155,26 +164,24 @@ function resetRateLimit(key: string) {
   rateLimitMap.delete(key);
 }
 
-const serverRegisterSchema = z.object({
-  name: z.string().trim().min(2, "Name must be at least 2 characters").max(80),
-  email: z
-    .string()
-    .trim()
-    .transform((val) => val.toLowerCase())
-    .pipe(z.string().email("Enter a valid email"))
-    .pipe(z.string().max(255)),
-  password: z.string().min(8, "Password must be at least 8 characters").max(72),
-});
+export function resetLoginRateLimitForTests() {
+  if (process.env["NODE_ENV"] !== "test")
+    throw new Error("Rate limit test seam only available in test mode");
+  rateLimitMap.clear();
+}
 
-const serverLoginSchema = z.object({
-  email: z
-    .string()
-    .trim()
-    .transform((val) => val.toLowerCase())
-    .pipe(z.string().email("Enter a valid email"))
-    .pipe(z.string().max(255)),
-  password: z.string().min(1, "Password is required").max(72),
-});
+let registrationFailureForTests: (() => void) | undefined;
+let cookieHandlerForTests: (() => void) | undefined;
+
+export function configureAuthTests(options: {
+  registrationFailure?: (() => void) | undefined;
+  cookieHandler?: (() => void) | undefined;
+}) {
+  if (process.env["NODE_ENV"] !== "test")
+    throw new Error("Auth test seam only available in test mode");
+  registrationFailureForTests = options.registrationFailure;
+  cookieHandlerForTests = options.cookieHandler;
+}
 
 export const getSessionFn = createServerFn({ method: "GET" }).handler(async () => {
   const cookieHeader = getHeader("cookie");
@@ -190,9 +197,10 @@ export const getSessionFn = createServerFn({ method: "GET" }).handler(async () =
 });
 
 export const loginFn = createServerFn({ method: "POST" })
-  .validator(serverLoginSchema)
+  .validator(loginServerSchema)
   .handler(async ({ data }) => {
-    const parsed = serverLoginSchema.safeParse(data);
+    assertSameOrigin();
+    const parsed = loginServerSchema.safeParse(data);
     if (!parsed.success) {
       throw new Error("Invalid email or password");
     }
@@ -225,9 +233,10 @@ export const loginFn = createServerFn({ method: "POST" })
   });
 
 export const registerFn = createServerFn({ method: "POST" })
-  .validator(serverRegisterSchema)
+  .validator(registerServerSchema)
   .handler(async ({ data }) => {
-    const parsed = serverRegisterSchema.safeParse(data);
+    assertSameOrigin();
+    const parsed = registerServerSchema.safeParse(data);
     if (!parsed.success) {
       throw new Error(parsed.error.issues[0]?.message ?? "Invalid registration details");
     }
@@ -264,6 +273,8 @@ export const registerFn = createServerFn({ method: "POST" })
         },
       });
 
+      registrationFailureForTests?.();
+
       await tx.category.createMany({
         data: DEFAULT_CATEGORIES.map((category) => ({
           familyId: family.id,
@@ -284,6 +295,7 @@ export const registerFn = createServerFn({ method: "POST" })
   });
 
 export const logoutFn = createServerFn({ method: "POST" }).handler(async () => {
+  assertSameOrigin();
   await clearSessionCookie();
   return { success: true };
 });

@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { toPaise, fromPaise, formatPaiseINR } from "./money";
 import { usagePercent, statusFor, remaining } from "./calculations";
 import { can, type Action, type Role } from "./authz";
+import { utcCalendarDate } from "./dates";
+import { amountSchema } from "./validations";
 
 describe("money.ts unit tests", () => {
   it("converts rupees to paise correctly", () => {
@@ -10,6 +12,16 @@ describe("money.ts unit tests", () => {
     expect(toPaise(0.01)).toBe(1);
     expect(toPaise(0)).toBe(0);
     expect(() => toPaise(12.345)).toThrow(/2 decimal places/);
+  });
+
+  it("handles floating point boundaries and rejects invalid amounts", () => {
+    expect(toPaise(0.1 + 0.2)).toBe(30);
+    expect(toPaise(19.99)).toBe(1999);
+    expect(() => toPaise(1.005)).toThrow(/2 decimal places/);
+    expect(() => toPaise(Number.NaN)).toThrow();
+    expect(() => toPaise(Number.POSITIVE_INFINITY)).toThrow();
+    expect(() => toPaise(-1)).toThrow();
+    expect(amountSchema.safeParse(1e21).success).toBe(false);
   });
 
   it("converts paise to rupees correctly", () => {
@@ -26,6 +38,11 @@ describe("money.ts unit tests", () => {
 });
 
 describe("calculations.ts unit tests", () => {
+  it("keeps the last calendar day at UTC midnight", () => {
+    const date = utcCalendarDate("2026-09-30");
+    expect(date.toISOString()).toBe("2026-09-30T00:00:00.000Z");
+    expect(date.toISOString().slice(0, 7)).toBe("2026-09");
+  });
   it("computes usage percent correctly", () => {
     expect(usagePercent(500, 1000)).toBe(50);
     expect(usagePercent(1000, 1000)).toBe(100);

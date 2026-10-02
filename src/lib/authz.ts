@@ -76,7 +76,21 @@ export interface AuthContext {
   };
 }
 
+let testAuthResolver: (() => Promise<AuthContext | null>) | undefined;
+
+export function setAuthResolverForTests(resolver: (() => Promise<AuthContext | null>) | undefined) {
+  if (process.env["NODE_ENV"] !== "test") {
+    throw new Error("The auth test seam is only available in test mode");
+  }
+  testAuthResolver = resolver;
+}
+
 export async function requireAuth(): Promise<AuthContext> {
+  if (testAuthResolver) {
+    const testAuth = await testAuthResolver();
+    if (!testAuth) throw httpError("Please sign in to continue", 401);
+    return testAuth;
+  }
   const cookieHeader = getHeader("cookie");
   const payload = await parseSessionFromHeader(cookieHeader);
 
