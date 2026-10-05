@@ -199,6 +199,40 @@ describe("family invite flow", () => {
     expect(await prisma.invite.findUnique({ where: { id: occupiedInvite.id } })).toMatchObject({
       usedAt: null,
     });
+
+    const privateOnlyUser = await makeUser("Private-only Owner", "private-only-owner@example.test");
+    const privateOnlyFamily = await prisma.family.create({
+      data: { name: "Private Activity Home", ownerId: privateOnlyUser.id },
+    });
+    const privateOnlyMember = await prisma.familyMember.create({
+      data: {
+        familyId: privateOnlyFamily.id,
+        userId: privateOnlyUser.id,
+        displayName: privateOnlyUser.name,
+        role: "OWNER",
+      },
+    });
+    const privateOnlyCategory = await prisma.category.create({
+      data: { familyId: privateOnlyFamily.id, name: "Personal", isDefault: true },
+    });
+    await prisma.expense.create({
+      data: {
+        familyId: privateOnlyFamily.id,
+        userId: privateOnlyUser.id,
+        memberId: privateOnlyMember.id,
+        categoryId: privateOnlyCategory.id,
+        amountPaise: 100,
+        visibility: "PRIVATE",
+      },
+    });
+    setAuth(privateOnlyUser, privateOnlyMember, privateOnlyFamily.id, "OWNER");
+    await expect(
+      acceptInviteFn({ data: { token: occupiedToken, leaveExistingFamily: true } }),
+    ).rejects.toThrow("already belongs to a family with other members or financial activity");
+    expect(await prisma.family.findUnique({ where: { id: privateOnlyFamily.id } })).not.toBeNull();
+    expect(await prisma.invite.findUnique({ where: { id: occupiedInvite.id } })).toMatchObject({
+      usedAt: null,
+    });
   });
 
   it("registers directly into the invited family and checks invite email", async () => {

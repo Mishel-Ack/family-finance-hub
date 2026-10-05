@@ -32,6 +32,13 @@ export type Action =
   | "expense:editOwn"
   | "expense:deleteAny"
   | "expense:deleteOwn"
+  | "split:create"
+  | "split:manageAny"
+  | "settlement:create"
+  | "settlement:manageAny"
+  | "settlement:deleteOwn"
+  | "settlement:deleteAny"
+  | "activity:read"
   | "readAll";
 
 const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
@@ -46,6 +53,7 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "member:changeAdminRole",
     "member:assignAdminRole",
     "member:transferOwnership",
+    "member:leave",
     "member:updateDisplayName",
     "family:create",
     "invite:create",
@@ -59,7 +67,14 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "expense:editOwn",
     "expense:deleteAny",
     "expense:deleteOwn",
+    "split:create",
+    "split:manageAny",
+    "settlement:create",
+    "settlement:manageAny",
+    "settlement:deleteOwn",
+    "settlement:deleteAny",
     "readAll",
+    "activity:read",
   ]),
   ADMIN: new Set<Action>([
     "family:rename",
@@ -79,18 +94,34 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "expense:editOwn",
     "expense:deleteAny",
     "expense:deleteOwn",
+    "split:create",
+    "split:manageAny",
+    "settlement:create",
+    "settlement:manageAny",
+    "settlement:deleteAny",
     "readAll",
+    "activity:read",
   ]),
   MEMBER: new Set<Action>([
     "expense:create",
     "expense:editOwn",
     "expense:deleteOwn",
+    "split:create",
+    "settlement:create",
+    "settlement:deleteOwn",
     "readAll",
+    "activity:read",
     "member:leave",
     "member:updateDisplayName",
     "family:create",
   ]),
-  VIEWER: new Set<Action>(["readAll", "member:leave", "member:updateDisplayName", "family:create"]),
+  VIEWER: new Set<Action>([
+    "readAll",
+    "activity:read",
+    "member:leave",
+    "member:updateDisplayName",
+    "family:create",
+  ]),
 };
 
 export function can(role: Role, action: Action): boolean {

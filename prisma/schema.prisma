@@ -20,6 +20,50 @@ enum InviteRole {
   VIEWER
 }
 
+enum ExpenseVisibility {
+  SHARED
+  PRIVATE
+}
+
+enum SplitMode {
+  EQUAL
+  EXACT
+  PERCENT
+}
+
+enum ActivityType {
+  EXPENSE_CREATED
+  EXPENSE_UPDATED
+  EXPENSE_DELETED
+  BUDGET_UPSERTED
+  BUDGET_DELETED
+  CATEGORY_CREATED
+  CATEGORY_UPDATED
+  CATEGORY_ARCHIVED
+  MEMBER_JOINED
+  MEMBER_LEFT
+  MEMBER_REMOVED
+  MEMBER_ROLE_CHANGED
+  OWNERSHIP_TRANSFERRED
+  INVITE_CREATED
+  INVITE_REVOKED
+  SPLIT_CREATED
+  SPLIT_REMOVED
+  SETTLEMENT_RECORDED
+  SETTLEMENT_DELETED
+}
+
+enum ActivityEntityType {
+  EXPENSE
+  BUDGET
+  CATEGORY
+  MEMBER
+  FAMILY
+  INVITE
+  SPLIT
+  SETTLEMENT
+}
+
 model User {
   id           String         @id @default(uuid())
   name         String
@@ -34,32 +78,40 @@ model User {
 }
 
 model Family {
-  id         String         @id @default(uuid())
-  name       String
-  ownerId    String
-  owner      User           @relation("FamilyOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
-  members    FamilyMember[]
-  categories Category[]
-  budgets    Budget[]
-  expenses   Expense[]
-  invites    Invite[]
+  id          String         @id @default(uuid())
+  name        String
+  ownerId     String
+  owner       User           @relation("FamilyOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  members     FamilyMember[]
+  categories  Category[]
+  budgets     Budget[]
+  expenses    Expense[]
+  invites     Invite[]
+  activity    ActivityLog[]
+  settlements Settlement[]
 
   @@index([ownerId])
 }
 
 model FamilyMember {
-  id             String    @id @default(uuid())
-  familyId       String
-  family         Family    @relation(fields: [familyId], references: [id], onDelete: Cascade)
-  userId         String?
-  user           User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  displayName    String    @default("")
-  role           Role      @default(MEMBER)
-  createdAt      DateTime  @default(now())
-  expenses       Expense[]
-  createdInvites Invite[]
+  id                 String         @id @default(uuid())
+  familyId           String
+  family             Family         @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  userId             String?
+  user               User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName        String         @default("")
+  role               Role           @default(MEMBER)
+  createdAt          DateTime       @default(now())
+  expenses           Expense[]
+  createdInvites     Invite[]
+  activities         ActivityLog[]
+  formerAt           DateTime?
+  expenseSplits      ExpenseSplit[]
+  settlementsFrom    Settlement[]   @relation("SettlementFrom")
+  settlementsTo      Settlement[]   @relation("SettlementTo")
+  settlementsCreated Settlement[]   @relation("SettlementCreator")
 
   @@unique([familyId, userId])
   @@unique([userId])
@@ -135,24 +187,78 @@ model BudgetCategory {
 }
 
 model Expense {
-  id                 String        @id @default(uuid())
+  id                 String            @id @default(uuid())
   familyId           String
-  family             Family        @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  family             Family            @relation(fields: [familyId], references: [id], onDelete: Cascade)
   userId             String
-  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   memberId           String?
-  member             FamilyMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  member             FamilyMember?     @relation(fields: [memberId], references: [id], onDelete: SetNull)
   memberNameSnapshot String?
+  memberIdSnapshot   String?
+  visibility         ExpenseVisibility @default(SHARED)
   categoryId         String
-  category           Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  category           Category          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   amountPaise        Int
-  date               DateTime      @default(now())
-  description        String        @default("")
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  date               DateTime          @default(now())
+  description        String            @default("")
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  splits             ExpenseSplit[]
 
   @@index([familyId, date])
   @@index([familyId, categoryId])
   @@index([familyId, memberId, date])
+  @@index([familyId, visibility, date])
   @@index([memberId])
+}
+
+model ExpenseSplit {
+  id          String       @id @default(uuid())
+  expenseId   String
+  expense     Expense      @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  memberId    String
+  member      FamilyMember @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  sharePaise  Int
+  mode        SplitMode    @default(EXACT)
+  basisPoints Int?
+
+  @@unique([expenseId, memberId])
+  @@index([memberId])
+}
+
+model Settlement {
+  id                String        @id @default(uuid())
+  familyId          String
+  family            Family        @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  fromMemberId      String
+  fromMember        FamilyMember  @relation("SettlementFrom", fields: [fromMemberId], references: [id], onDelete: Restrict)
+  toMemberId        String
+  toMember          FamilyMember  @relation("SettlementTo", fields: [toMemberId], references: [id], onDelete: Restrict)
+  fromNameSnapshot  String
+  toNameSnapshot    String
+  amountPaise       Int
+  note              String        @default("") @db.VarChar(200)
+  createdByMemberId String?
+  createdByMember   FamilyMember? @relation("SettlementCreator", fields: [createdByMemberId], references: [id], onDelete: SetNull)
+  createdAt         DateTime      @default(now())
+
+  @@index([familyId, createdAt])
+}
+
+model ActivityLog {
+  id                String             @id @default(uuid())
+  familyId          String
+  family            Family             @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  actorMemberId     String?
+  actorMember       FamilyMember?      @relation(fields: [actorMemberId], references: [id], onDelete: SetNull)
+  actorNameSnapshot String
+  type              ActivityType
+  entityType        ActivityEntityType
+  entityId          String?
+  summary           Json
+  createdAt         DateTime           @default(now())
+
+  @@index([familyId, createdAt, id])
+  @@index([familyId, entityType, entityId])
 }

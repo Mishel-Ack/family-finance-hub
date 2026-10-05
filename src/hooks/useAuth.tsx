@@ -16,6 +16,7 @@ interface AuthContextValue {
   family: Family | null;
   role: FamilyRole | null;
   displayName: string | null;
+  memberId: string | null;
   loading: boolean;
   canEdit: boolean;
   refresh: () => Promise<void>;
@@ -30,6 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [family, setFamily] = useState<Family | null>(null);
   const [role, setRole] = useState<FamilyRole | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
+  const [memberId, setMemberId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadSession = async () => {
@@ -41,6 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setFamily(null);
         setRole(null);
         setDisplayName(null);
+        setMemberId(null);
         setLoading(false);
         return;
       }
@@ -56,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setFamily(membership?.family ?? null);
       setRole((membership?.membership.role as FamilyRole) ?? null);
       setDisplayName(membership?.membership.display_name ?? null);
+      setMemberId(membership?.membership.id ?? null);
     } catch (error) {
       console.error("Failed to load server session", error);
       setSession(null);
@@ -63,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setFamily(null);
       setRole(null);
       setDisplayName(null);
+      setMemberId(null);
     } finally {
       setLoading(false);
     }
@@ -79,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     family,
     role,
     displayName,
+    memberId,
     loading,
     canEdit: role !== null && role !== "VIEWER",
     refresh: async () => {
@@ -91,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setFamily(null);
       setRole(null);
       setDisplayName(null);
+      setMemberId(null);
     },
   };
 

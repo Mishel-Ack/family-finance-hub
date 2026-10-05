@@ -8,6 +8,7 @@ import { notFound } from "@/lib/http-error";
 import { assertBudgetInFamily, assertCategoryInFamily } from "@/lib/guards";
 import { idSchema, monthYearSchema } from "@/lib/validations";
 import { assertSameOrigin } from "@/lib/http-utils";
+import { recordActivity } from "@/lib/activity-queries";
 
 export const getBudgetFn = createServerFn({ method: "GET" })
   .validator(monthYearSchema)
@@ -48,23 +49,37 @@ export const upsertBudgetFn = createServerFn({ method: "POST" })
 
     const totalLimitPaise = toPaise(data.totalLimit);
 
-    const b = await prisma.budget.upsert({
-      where: {
-        familyId_month_year: {
+    const b = await prisma.$transaction(async (tx) => {
+      const budget = await tx.budget.upsert({
+        where: {
+          familyId_month_year: {
+            familyId: auth.familyId,
+            month: data.month,
+            year: data.year,
+          },
+        },
+        create: {
           familyId: auth.familyId,
           month: data.month,
           year: data.year,
+          totalLimitPaise,
         },
-      },
-      create: {
-        familyId: auth.familyId,
-        month: data.month,
-        year: data.year,
-        totalLimitPaise,
-      },
-      update: {
-        totalLimitPaise,
-      },
+        update: {
+          totalLimitPaise,
+        },
+      });
+      await recordActivity(tx, auth, {
+        type: "BUDGET_UPSERTED",
+        entityType: "BUDGET",
+        entityId: budget.id,
+        summary: {
+          operation: "TOTAL_LIMIT_SET",
+          month: budget.month,
+          year: budget.year,
+          totalLimitPaise: budget.totalLimitPaise,
+        },
+      });
+      return budget;
     });
 
     return {
@@ -83,10 +98,22 @@ export const deleteBudgetFn = createServerFn({ method: "POST" })
     assertSameOrigin();
     const auth = await requireMember("budget:manage");
 
-    const deleted = await prisma.budget.deleteMany({
-      where: { id: budgetId, familyId: auth.familyId },
+    await prisma.$transaction(async (tx) => {
+      const budget = await tx.budget.findFirst({
+        where: { id: budgetId, familyId: auth.familyId },
+      });
+      if (!budget) throw notFound("Budget not found");
+      const deleted = await tx.budget.deleteMany({
+        where: { id: budgetId, familyId: auth.familyId },
+      });
+      if (deleted.count === 0) throw notFound("Budget not found");
+      await recordActivity(tx, auth, {
+        type: "BUDGET_DELETED",
+        entityType: "BUDGET",
+        entityId: budget.id,
+        summary: { month: budget.month, year: budget.year },
+      });
     });
-    if (deleted.count === 0) throw notFound("Budget not found");
   });
 
 export const listBudgetCategoriesFn = createServerFn({ method: "GET" })
@@ -139,21 +166,40 @@ export const upsertBudgetCategoryFn = createServerFn({ method: "POST" })
 
     const limitAmountPaise = toPaise(data.limitAmount);
 
-    await prisma.budgetCategory.upsert({
-      where: {
-        budgetId_categoryId: {
+    await prisma.$transaction(async (tx) => {
+      const [budget, category] = await Promise.all([
+        tx.budget.findFirst({ where: { id: data.budgetId, familyId: auth.familyId } }),
+        tx.category.findFirst({ where: { id: data.categoryId, familyId: auth.familyId } }),
+      ]);
+      if (!budget || !category) throw notFound("Budget or category not found");
+      await tx.budgetCategory.upsert({
+        where: {
+          budgetId_categoryId: {
+            budgetId: data.budgetId,
+            categoryId: data.categoryId,
+          },
+        },
+        create: {
           budgetId: data.budgetId,
           categoryId: data.categoryId,
+          limitAmountPaise,
         },
-      },
-      create: {
-        budgetId: data.budgetId,
-        categoryId: data.categoryId,
-        limitAmountPaise,
-      },
-      update: {
-        limitAmountPaise,
-      },
+        update: {
+          limitAmountPaise,
+        },
+      });
+      await recordActivity(tx, auth, {
+        type: "BUDGET_UPSERTED",
+        entityType: "BUDGET",
+        entityId: budget.id,
+        summary: {
+          operation: "CATEGORY_LIMIT_SET",
+          month: budget.month,
+          year: budget.year,
+          categoryName: category.name.slice(0, 80),
+          limitPaise: limitAmountPaise,
+        },
+      });
     });
   });
 
@@ -163,10 +209,28 @@ export const deleteBudgetCategoryFn = createServerFn({ method: "POST" })
     assertSameOrigin();
     const auth = await requireMember("budget:manage");
 
-    const deleted = await prisma.budgetCategory.deleteMany({
-      where: { id, budget: { familyId: auth.familyId } },
+    await prisma.$transaction(async (tx) => {
+      const entry = await tx.budgetCategory.findFirst({
+        where: { id, budget: { familyId: auth.familyId } },
+        include: { budget: true, category: true },
+      });
+      if (!entry) throw notFound("Budget category not found");
+      const deleted = await tx.budgetCategory.deleteMany({
+        where: { id, budget: { familyId: auth.familyId } },
+      });
+      if (deleted.count === 0) throw notFound("Budget category not found");
+      await recordActivity(tx, auth, {
+        type: "BUDGET_UPSERTED",
+        entityType: "BUDGET",
+        entityId: entry.budgetId,
+        summary: {
+          operation: "CATEGORY_LIMIT_REMOVED",
+          month: entry.budget.month,
+          year: entry.budget.year,
+          categoryName: entry.category.name.slice(0, 80),
+        },
+      });
     });
-    if (deleted.count === 0) throw notFound("Budget category not found");
   });
 
 // Export client functions

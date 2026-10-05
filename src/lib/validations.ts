@@ -70,13 +70,33 @@ export const categoryLimitSchema = z.object({
   limitAmount: amountSchema,
 });
 
+export const splitInputSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("EQUAL"), memberIds: z.array(idSchema).min(1).max(100) }),
+  z.object({
+    mode: z.literal("EXACT"),
+    participants: z.array(z.object({ memberId: idSchema, sharePaise: z.number().int().positive() })).min(1).max(100),
+  }),
+  z.object({
+    mode: z.literal("PERCENT"),
+    participants: z.array(z.object({ memberId: idSchema, basisPoints: z.number().int().positive().max(10000) })).min(1).max(100),
+  }),
+]);
 export const expenseSchema = z.object({
   amount: amountSchema,
   categoryId: z.string().min(1, "Category is required"),
   memberId: z.string().optional().nullable(),
   date: dateSchema,
   description: z.string().trim().max(200).optional().default(""),
+  visibility: z.enum(["SHARED", "PRIVATE"]).optional().default("SHARED"),
+  split: splitInputSchema.nullable().optional(),
 });
+export const expenseListQuerySchema = z
+  .object({
+    from: dateSchema.optional(),
+    to: dateSchema.optional(),
+    visibility: z.enum(["VISIBLE", "SHARED", "PRIVATE"]).optional().default("VISIBLE"),
+  })
+  .refine(({ from, to }) => !from || !to || from <= to, "Start date must be on or before end date");
 
 export const profileSchema = z.object({
   name: z.string().trim().min(2, "Name must be at least 2 characters").max(80),

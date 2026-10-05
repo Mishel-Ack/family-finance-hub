@@ -9,6 +9,8 @@ import { categoryCreateSchema, categoryUpdateSchema, idSchema } from "@/lib/vali
 import { httpError, notFound } from "@/lib/http-error";
 import { assertCategoryInFamily } from "@/lib/guards";
 import { assertSameOrigin } from "@/lib/http-utils";
+import { countAllCategoryExpenses } from "@/lib/expense-queries";
+import { recordActivity } from "@/lib/activity-queries";
 
 export async function ensureDefaultCategories(
   tx: Prisma.TransactionClient | typeof prisma,
@@ -65,38 +67,53 @@ export const createCategoryFn = createServerFn({ method: "POST" })
     const name = data.name.trim();
     if (!name) throw new Error("Category name is required");
 
-    const existing = await prisma.category.findUnique({
-      where: {
-        familyId_name: {
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.category.findUnique({
+        where: {
+          familyId_name: {
+            familyId: auth.familyId,
+            name,
+          },
+        },
+      });
+
+      if (existing) {
+        if (existing.archivedAt) {
+          const category = await tx.category.update({
+            where: { id: existing.id },
+            data: {
+              archivedAt: null,
+              color: data.color || existing.color,
+              icon: data.icon || existing.icon,
+            },
+          });
+          await recordActivity(tx, auth, {
+            type: "CATEGORY_CREATED",
+            entityType: "CATEGORY",
+            entityId: category.id,
+            summary: { categoryName: category.name.slice(0, 80) },
+          });
+          return category;
+        }
+        throw new Error("Category with this name already exists");
+      }
+
+      const category = await tx.category.create({
+        data: {
           familyId: auth.familyId,
           name,
+          color: data.color || "#6b7280",
+          icon: data.icon || "Tag",
+          isDefault: false,
         },
-      },
-    });
-
-    if (existing) {
-      if (existing.archivedAt) {
-        // Unarchive
-        return await prisma.category.update({
-          where: { id: existing.id },
-          data: {
-            archivedAt: null,
-            color: data.color || existing.color,
-            icon: data.icon || existing.icon,
-          },
-        });
-      }
-      throw new Error("Category with this name already exists");
-    }
-
-    return await prisma.category.create({
-      data: {
-        familyId: auth.familyId,
-        name,
-        color: data.color || "#6b7280",
-        icon: data.icon || "Tag",
-        isDefault: false,
-      },
+      });
+      await recordActivity(tx, auth, {
+        type: "CATEGORY_CREATED",
+        entityType: "CATEGORY",
+        entityId: category.id,
+        summary: { categoryName: category.name.slice(0, 80) },
+      });
+      return category;
     });
   });
 
@@ -115,12 +132,24 @@ export const updateCategoryFn = createServerFn({ method: "POST" })
     if (data.input.color) updateData.color = data.input.color;
     if (data.input.icon) updateData.icon = data.input.icon;
 
-    const updated = await prisma.category.updateMany({
-      where: { id: data.id, familyId: auth.familyId },
-      data: updateData,
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.category.updateMany({
+        where: { id: data.id, familyId: auth.familyId },
+        data: updateData,
+      });
+      if (updated.count === 0) throw notFound("Category not found");
+      const category = await tx.category.findFirst({
+        where: { id: data.id, familyId: auth.familyId },
+      });
+      if (!category) throw notFound("Category not found");
+      await recordActivity(tx, auth, {
+        type: "CATEGORY_UPDATED",
+        entityType: "CATEGORY",
+        entityId: category.id,
+        summary: { categoryName: category.name.slice(0, 80) },
+      });
+      return category;
     });
-    if (updated.count === 0) throw notFound("Category not found");
-    return prisma.category.findFirst({ where: { id: data.id, familyId: auth.familyId } });
   });
 
 export const archiveCategoryFn = createServerFn({ method: "POST" })
@@ -129,11 +158,21 @@ export const archiveCategoryFn = createServerFn({ method: "POST" })
     assertSameOrigin();
     const auth = await requireMember("category:manage");
 
-    const archived = await prisma.category.updateMany({
-      where: { id, familyId: auth.familyId },
-      data: { archivedAt: new Date() },
+    await prisma.$transaction(async (tx) => {
+      const category = await tx.category.findFirst({ where: { id, familyId: auth.familyId } });
+      if (!category) throw notFound("Category not found");
+      const archived = await tx.category.updateMany({
+        where: { id, familyId: auth.familyId },
+        data: { archivedAt: new Date() },
+      });
+      if (archived.count === 0) throw notFound("Category not found");
+      await recordActivity(tx, auth, {
+        type: "CATEGORY_ARCHIVED",
+        entityType: "CATEGORY",
+        entityId: category.id,
+        summary: { categoryName: category.name.slice(0, 80) },
+      });
     });
-    if (archived.count === 0) throw notFound("Category not found");
   });
 
 export const deleteCategoryFn = createServerFn({ method: "POST" })
@@ -142,9 +181,7 @@ export const deleteCategoryFn = createServerFn({ method: "POST" })
     assertSameOrigin();
     const auth = await requireMember("category:manage");
     await assertCategoryInFamily(auth, id, false);
-    const usedCount = await prisma.expense.count({
-      where: { familyId: auth.familyId, categoryId: id },
-    });
+    const usedCount = await countAllCategoryExpenses(prisma, auth.familyId, id);
     if (usedCount > 0) {
       throw httpError("This category has expenses. Archive it instead.", 409);
     }

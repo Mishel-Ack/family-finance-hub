@@ -73,6 +73,8 @@ export interface Expense {
   family_id: string;
   user_id: string;
   member_id: string | null;
+  member_id_snapshot?: string | null;
+  member_name_snapshot?: string | null;
   amount_paise: number;
   // UI fallback helper
   amount: number;
@@ -84,6 +86,14 @@ export interface Expense {
   date: string;
   description: string;
   family_member: string; // legacy display string or resolved member name
+  visibility: "SHARED" | "PRIVATE";
+  splits?: {
+    member_id: string;
+    member_name: string;
+    share_paise: number;
+    mode: "EQUAL" | "EXACT" | "PERCENT";
+    basis_points: number | null;
+  }[];
   created_at?: string;
 }
 
@@ -93,6 +103,13 @@ export interface ExpenseInput {
   memberId?: string | null;
   date: string;
   description?: string;
+  visibility?: "SHARED" | "PRIVATE";
+  split?:
+    | undefined
+    | null
+    | { mode: "EQUAL"; memberIds: string[] }
+    | { mode: "EXACT"; participants: { memberId: string; sharePaise: number }[] }
+    | { mode: "PERCENT"; participants: { memberId: string; basisPoints: number }[] };
 }
 
 export interface CategoryInput {

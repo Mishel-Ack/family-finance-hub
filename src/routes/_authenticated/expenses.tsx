@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -51,6 +52,8 @@ import { listExpenses, createExpense, updateExpense, deleteExpense } from "@/ser
 import { expenseSchema } from "@/lib/validations";
 import { formatDate, formatINR, todayISO } from "@/lib/format";
 import type { Expense } from "@/types";
+import { computeEqualSplit, computeExactSplit, computePercentSplit } from "@/lib/splits";
+import { toPaise } from "@/lib/money";
 
 export const Route = createFileRoute("/_authenticated/expenses")({
   head: () => ({
@@ -75,6 +78,9 @@ function ExpensesPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
+  const [visibilityFilter, setVisibilityFilter] = useState<"VISIBLE" | "SHARED" | "PRIVATE">(
+    "VISIBLE",
+  );
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [sort, setSort] = useState("date-desc");
@@ -86,8 +92,14 @@ function ExpensesPage() {
     memberId: "",
     date: todayISO(),
     description: "",
+    visibility: "SHARED" as "SHARED" | "PRIVATE",
   });
   const [error, setError] = useState("");
+  const [splitEnabled, setSplitEnabled] = useState(false);
+  const [splitWasPresent, setSplitWasPresent] = useState(false);
+  const [splitMode, setSplitMode] = useState<"EQUAL" | "EXACT" | "PERCENT">("EQUAL");
+  const [splitMembers, setSplitMembers] = useState<string[]>([]);
+  const [splitValues, setSplitValues] = useState<Record<string, string>>({});
   const [deleteTarget, setDeleteTarget] = useState<Expense | null>(null);
 
   const categoriesQuery = useQuery({
@@ -103,9 +115,12 @@ function ExpensesPage() {
   });
 
   const query = useQuery({
-    queryKey: ["expenses", family?.id],
-    queryFn: () => listExpenses(),
+    queryKey: ["expenses", family?.id, visibilityFilter],
+    queryFn: () => listExpenses(undefined, undefined, visibilityFilter),
     enabled: Boolean(family?.id),
+    refetchOnWindowFocus: true,
+    refetchInterval: () =>
+      typeof document !== "undefined" && document.visibilityState === "visible" ? 30_000 : false,
   });
 
   const categoryOptions = categoriesQuery.data ?? [];
@@ -159,6 +174,29 @@ function ExpensesPage() {
         memberId: form.memberId || null,
         date: form.date,
         description: form.description,
+        visibility: form.visibility,
+        split:
+          form.visibility === "SHARED" && splitEnabled
+            ? splitMode === "EQUAL"
+              ? { mode: "EQUAL", memberIds: splitMembers }
+              : splitMode === "EXACT"
+                ? {
+                    mode: "EXACT",
+                    participants: splitMembers.map((memberId) => ({
+                      memberId,
+                      sharePaise: Number(splitValues[memberId]),
+                    })),
+                  }
+                : {
+                    mode: "PERCENT",
+                    participants: splitMembers.map((memberId) => ({
+                      memberId,
+                      basisPoints: Number(splitValues[memberId]),
+                    })),
+                  }
+            : editId && splitWasPresent
+              ? null
+              : undefined,
       });
       if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Invalid expense");
       const input = {
@@ -167,6 +205,8 @@ function ExpensesPage() {
         memberId: parsed.data.memberId ?? null,
         date: parsed.data.date,
         description: parsed.data.description ?? "",
+        visibility: parsed.data.visibility,
+        split: parsed.data.split,
       };
       if (editId) await updateExpense(editId, input);
       else await createExpense(input);
@@ -181,8 +221,13 @@ function ExpensesPage() {
         memberId: "",
         date: todayISO(),
         description: "",
+        visibility: "SHARED",
       });
       setError("");
+      setSplitEnabled(false);
+      setSplitWasPresent(false);
+      setSplitMembers([]);
+      setSplitValues({});
       invalidate();
     },
     onError: (e: Error) => setError(e.message),
@@ -206,8 +251,18 @@ function ExpensesPage() {
       memberId: "",
       date: todayISO(),
       description: "",
+      visibility: "SHARED",
     });
     setError("");
+    setSplitEnabled(false);
+    setSplitWasPresent(false);
+    setSplitMode("EQUAL");
+    setSplitMembers(
+      memberOptions.find((member) => member.is_you)
+        ? [memberOptions.find((member) => member.is_you)!.id]
+        : [],
+    );
+    setSplitValues({});
     setOpen(true);
   };
 
@@ -219,8 +274,21 @@ function ExpensesPage() {
       memberId: expense.member_id ?? "",
       date: expense.date,
       description: expense.description,
+      visibility: expense.visibility,
     });
     setError("");
+    setSplitEnabled(Boolean(expense.splits?.length));
+    setSplitWasPresent(Boolean(expense.splits?.length));
+    setSplitMode(expense.splits?.[0]?.mode ?? "EQUAL");
+    setSplitMembers(expense.splits?.map((split) => split.member_id) ?? []);
+    setSplitValues(
+      Object.fromEntries(
+        (expense.splits ?? []).map((split) => [
+          split.member_id,
+          split.mode === "PERCENT" ? String(split.basis_points ?? "") : String(split.share_paise),
+        ]),
+      ),
+    );
     setOpen(true);
   };
 
@@ -238,7 +306,7 @@ function ExpensesPage() {
 
       <Card className="shadow-soft">
         <CardContent className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-12">
-          <div className="relative sm:col-span-2 lg:col-span-4">
+          <div className="relative sm:col-span-2 lg:col-span-3">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="pl-9"
@@ -263,7 +331,22 @@ function ExpensesPage() {
               </SelectContent>
             </Select>
           </div>
-          <div className="grid grid-cols-2 gap-2 lg:col-span-4">
+          <div className="lg:col-span-2">
+            <Select
+              value={visibilityFilter}
+              onValueChange={(value) => setVisibilityFilter(value as typeof visibilityFilter)}
+            >
+              <SelectTrigger aria-label="Filter by visibility">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="VISIBLE">All visible expenses</SelectItem>
+                <SelectItem value="SHARED">Shared expenses</SelectItem>
+                <SelectItem value="PRIVATE">Mine</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-2 lg:col-span-3">
             <Input
               type="date"
               aria-label="From date"
@@ -322,6 +405,7 @@ function ExpensesPage() {
                       <TableHead>Category</TableHead>
                       <TableHead>Description</TableHead>
                       <TableHead>Member</TableHead>
+                      <TableHead>Split</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
                       <TableHead className="w-24" />
                     </TableRow>
@@ -334,11 +418,33 @@ function ExpensesPage() {
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary">{expense.category}</Badge>
+                          {expense.visibility === "PRIVATE" ? (
+                            <Badge className="ml-1">Private</Badge>
+                          ) : null}
+                          {expense.splits?.length ? (
+                            <Badge variant="outline" className="ml-1">
+                              Split
+                            </Badge>
+                          ) : null}
                         </TableCell>
                         <TableCell className="max-w-[240px] truncate">
                           {expense.description || "—"}
                         </TableCell>
                         <TableCell>{expense.family_member || "—"}</TableCell>
+                        <TableCell>
+                          {expense.splits?.length ? (
+                            <details>
+                              <summary className="cursor-pointer text-sm">Who owes what</summary>
+                              <ul className="mt-1">
+                                {expense.splits.map((split) => (
+                                  <li key={split.member_id}>
+                                    {split.member_name}: {formatINR(split.share_paise / 100)}
+                                  </li>
+                                ))}
+                              </ul>
+                            </details>
+                          ) : null}
+                        </TableCell>
                         <TableCell className="text-right font-medium">
                           {formatINR(Number(expense.amount))}
                         </TableCell>
@@ -390,7 +496,11 @@ function ExpensesPage() {
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <Badge variant="secondary">{expense.category}</Badge>
+                      <div className="flex gap-1">
+                        <Badge variant="secondary">{expense.category}</Badge>
+                        {expense.visibility === "PRIVATE" ? <Badge>Private</Badge> : null}
+                        {expense.splits?.length ? <Badge variant="outline">Split</Badge> : null}
+                      </div>
                       <div className="flex gap-1">
                         <Button
                           size="icon"
@@ -458,6 +568,24 @@ function ExpensesPage() {
               </Select>
             </div>
             <div className="space-y-1.5">
+              <div className="flex min-h-10 items-center justify-between rounded-md border px-3">
+                <Label htmlFor="expense-visibility">Private</Label>
+                <Switch
+                  id="expense-visibility"
+                  checked={form.visibility === "PRIVATE"}
+                  onCheckedChange={(checked) =>
+                    setForm({
+                      ...form,
+                      visibility: checked ? "PRIVATE" : "SHARED",
+                      ...(checked
+                        ? { memberId: memberOptions.find((member) => member.is_you)?.id ?? "" }
+                        : {}),
+                    })
+                  }
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
               <Label htmlFor="date">Date</Label>
               <Input
                 id="date"
@@ -480,6 +608,7 @@ function ExpensesPage() {
               <Label htmlFor="member">Family member</Label>
               <Select
                 value={form.memberId}
+                disabled={form.visibility === "PRIVATE"}
                 onValueChange={(v) => setForm({ ...form, memberId: v })}
               >
                 <SelectTrigger id="member">
@@ -494,6 +623,120 @@ function ExpensesPage() {
                 </SelectContent>
               </Select>
             </div>
+            {form.visibility === "SHARED" ? (
+              <section aria-labelledby="split-heading" className="space-y-3 rounded-lg border p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Label id="split-heading" htmlFor="split-enabled">
+                    Split this expense
+                  </Label>
+                  <Switch
+                    id="split-enabled"
+                    checked={splitEnabled}
+                    onCheckedChange={setSplitEnabled}
+                  />
+                </div>
+                {splitEnabled ? (
+                  <>
+                    <div role="group" aria-label="Split mode" className="flex gap-2">
+                      {(["EQUAL", "EXACT", "PERCENT"] as const).map((mode) => (
+                        <Button
+                          key={mode}
+                          type="button"
+                          size="sm"
+                          variant={splitMode === mode ? "default" : "outline"}
+                          onClick={() => setSplitMode(mode)}
+                        >
+                          {mode === "EQUAL" ? "Equal" : mode === "EXACT" ? "Exact" : "Percent"}
+                        </Button>
+                      ))}
+                    </div>
+                    <fieldset className="space-y-2">
+                      <legend className="text-sm font-medium">Participants</legend>
+                      {memberOptions.map((person) => (
+                        <label key={person.id} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={splitMembers.includes(person.id)}
+                            onChange={(event) => {
+                              setSplitMembers((current) =>
+                                event.target.checked
+                                  ? [...current, person.id]
+                                  : current.filter((id) => id !== person.id),
+                              );
+                            }}
+                          />
+                          {person.display_name || "Member"}
+                          {splitMode !== "EQUAL" && splitMembers.includes(person.id) ? (
+                            <Input
+                              className="ml-auto w-32"
+                              aria-label={`${person.display_name} ${splitMode === "EXACT" ? "share in paise" : "basis points"}`}
+                              type="number"
+                              min="1"
+                              value={splitValues[person.id] ?? ""}
+                              placeholder={splitMode === "EXACT" ? "Share (paise)" : "Basis points"}
+                              onChange={(event) =>
+                                setSplitValues((values) => ({
+                                  ...values,
+                                  [person.id]: event.target.value,
+                                }))
+                              }
+                            />
+                          ) : null}
+                        </label>
+                      ))}
+                    </fieldset>
+                    {(() => {
+                      try {
+                        const amountPaise = toPaise(Number(form.amount));
+                        const preview =
+                          splitMode === "EQUAL"
+                            ? computeEqualSplit(amountPaise, splitMembers)
+                            : splitMode === "EXACT"
+                              ? computeExactSplit(
+                                  amountPaise,
+                                  splitMembers.map((memberId) => ({
+                                    memberId,
+                                    sharePaise: Number(splitValues[memberId]),
+                                  })),
+                                )
+                              : computePercentSplit(
+                                  amountPaise,
+                                  splitMembers.map((memberId) => ({
+                                    memberId,
+                                    basisPoints: Number(splitValues[memberId]),
+                                  })),
+                                );
+                        return (
+                          <div aria-live="polite" className="space-y-1 text-sm">
+                            <p className="font-medium">Share preview</p>
+                            {preview.map((share) => (
+                              <p key={share.memberId}>
+                                {memberOptions.find((person) => person.id === share.memberId)
+                                  ?.display_name ?? "Member"}
+                                : {formatINR(share.sharePaise / 100)}
+                              </p>
+                            ))}
+                            {splitMode === "EQUAL" ? (
+                              <p className="text-xs text-muted-foreground">
+                                Remainder paise go to participant IDs in ascending order.
+                              </p>
+                            ) : null}
+                          </div>
+                        );
+                      } catch (previewError) {
+                        return (
+                          <p role="status" className="text-sm text-destructive">
+                            {previewError instanceof Error
+                              ? previewError.message
+                              : "Enter a valid split."}
+                          </p>
+                        );
+                      }
+                    })()}
+                  </>
+                ) : null}
+              </section>
+            ) : null}
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
           </div>
           <DialogFooter>

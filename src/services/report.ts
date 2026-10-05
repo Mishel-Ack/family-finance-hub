@@ -5,7 +5,14 @@ import { listCategories } from "./category";
 import { statusFor, usagePercent } from "@/lib/calculations";
 import { fromPaise } from "@/lib/money";
 import type { Expense } from "@/types";
-import { monthYearSchema, yearSchema } from "@/lib/validations";
+import { idSchema, monthYearSchema, yearSchema } from "@/lib/validations";
+import { z } from "zod";
+
+const monthlyReportSchema = monthYearSchema.extend({ memberId: idSchema.optional() });
+const yearlyReportSchema = z.union([
+  yearSchema,
+  z.object({ year: yearSchema, memberId: idSchema.optional() }),
+]);
 
 export function monthRange(month: number, year: number) {
   const from = new Date(Date.UTC(year, month - 1, 1)).toISOString().slice(0, 10);
@@ -45,17 +52,28 @@ export interface MonthlySummary {
   expenses: Expense[];
   categories: CategoryBreakdown[];
   allocated: number;
+  spendingByMember: Array<{
+    memberId: string | null;
+    memberName: string;
+    amountPaise: number;
+    amount: number;
+  }>;
 }
 
 export const getMonthlySummaryFn = createServerFn({ method: "GET" })
-  .validator(monthYearSchema)
-  .handler(async ({ data: { month, year } }): Promise<MonthlySummary> => {
+  .validator(monthlyReportSchema)
+  .handler(async ({ data: { month, year, memberId } }): Promise<MonthlySummary> => {
     const { from, to } = monthRange(month, year);
-    const [budget, familyCategories, expenses] = await Promise.all([
+    const [budget, familyCategories, allExpenses] = await Promise.all([
       getBudget(month, year),
       listCategories(),
-      listExpenses(from, to),
+      listExpenses(from, to, "SHARED"),
     ]);
+    const expenses = memberId
+      ? allExpenses.filter(
+          (expense) => expense.member_id === memberId || expense.member_id_snapshot === memberId,
+        )
+      : allExpenses;
 
     const budgetCategories = budget ? await listBudgetCategories(budget.id) : [];
 
@@ -92,6 +110,30 @@ export const getMonthlySummaryFn = createServerFn({ method: "GET" })
     });
 
     const allocatedPaise = budgetCategories.reduce((s, c) => s + (c.limit_amount_paise ?? 0), 0);
+    const membersById = new Map<
+      string,
+      { memberId: string | null; memberName: string; amountPaise: number }
+    >();
+    for (const expense of expenses) {
+      const formerId = expense.member_id_snapshot ?? null;
+      const hasFormerName = !expense.member_id && Boolean(expense.member_name_snapshot);
+      const key =
+        expense.member_id ??
+        formerId ??
+        (hasFormerName ? `former:${expense.member_name_snapshot}` : "__unassigned__");
+      const current = membersById.get(key);
+      const memberName =
+        formerId || hasFormerName
+          ? `Former member (${expense.member_name_snapshot || "Unknown"})`
+          : expense.member_id
+            ? expense.family_member || "Family member"
+            : "Unassigned";
+      membersById.set(key, {
+        memberId: expense.member_id ?? formerId,
+        memberName,
+        amountPaise: (current?.amountPaise ?? 0) + (expense.amount_paise ?? 0),
+      });
+    }
 
     return {
       month,
@@ -110,15 +152,26 @@ export const getMonthlySummaryFn = createServerFn({ method: "GET" })
       expenses,
       categories: breakdown,
       allocated: fromPaise(allocatedPaise),
+      spendingByMember: [...membersById.values()].map((member) => ({
+        ...member,
+        amount: fromPaise(member.amountPaise),
+      })),
     };
   });
 
 export const getYearlyTrendFn = createServerFn({ method: "GET" })
-  .validator(yearSchema)
-  .handler(async ({ data: year }) => {
+  .validator(yearlyReportSchema)
+  .handler(async ({ data }) => {
+    const year = typeof data === "number" ? data : data.year;
+    const memberId = typeof data === "number" ? undefined : data.memberId;
     const from = `${year}-01-01`;
     const to = `${year}-12-31`;
-    const expenses = await listExpenses(from, to);
+    const allExpenses = await listExpenses(from, to, "SHARED");
+    const expenses = memberId
+      ? allExpenses.filter(
+          (expense) => expense.member_id === memberId || expense.member_id_snapshot === memberId,
+        )
+      : allExpenses;
     const totalsPaise = Array.from({ length: 12 }, () => 0);
     for (const e of expenses) {
       const m = Number(e.date.slice(5, 7)) - 1;
@@ -129,10 +182,10 @@ export const getYearlyTrendFn = createServerFn({ method: "GET" })
     return totalsPaise.map((p) => fromPaise(p));
   });
 
-export function getMonthlySummary(month: number, year: number) {
-  return getMonthlySummaryFn({ data: { month, year } });
+export function getMonthlySummary(month: number, year: number, memberId?: string) {
+  return getMonthlySummaryFn({ data: { month, year, memberId } });
 }
 
-export function getYearlyTrend(year: number) {
-  return getYearlyTrendFn({ data: year });
+export function getYearlyTrend(year: number, memberId?: string) {
+  return getYearlyTrendFn({ data: { year, memberId } });
 }
