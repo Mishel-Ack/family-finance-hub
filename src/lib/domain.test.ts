@@ -80,15 +80,34 @@ describe("authz.ts permission matrix unit tests", () => {
       "expense:editOwn",
       "expense:deleteAny",
       "expense:deleteOwn",
+      "split:create",
+      "split:manageAny",
+      "settlement:create",
+      "settlement:manageAny",
+      "settlement:deleteOwn",
+      "settlement:deleteAny",
+      "activity:read",
       "readAll",
     ];
     const permissions: Record<Role, Action[]> = {
       OWNER: actions,
       ADMIN: actions.filter(
-        (action) => action !== "family:delete" && action !== "member:changeRole",
+        (action) =>
+          action !== "family:delete" &&
+          action !== "member:changeRole" &&
+          action !== "settlement:deleteOwn",
       ),
-      MEMBER: ["expense:create", "expense:editOwn", "expense:deleteOwn", "readAll"],
-      VIEWER: ["readAll"],
+      MEMBER: [
+        "expense:create",
+        "expense:editOwn",
+        "expense:deleteOwn",
+        "split:create",
+        "settlement:create",
+        "settlement:deleteOwn",
+        "readAll",
+        "activity:read",
+      ],
+      VIEWER: ["readAll", "activity:read"],
     };
     for (const role of roles) {
       for (const action of actions) {

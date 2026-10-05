@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -9,7 +9,9 @@ import {
   TrendingDown,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { getMonthlySummary } from "@/services/report";
+import { getMonthlySummary, monthRange } from "@/services/report";
+import { listExpenses } from "@/services/expense";
+import { fromPaise } from "@/lib/money";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { PageHeader } from "@/components/common/PageHeader";
 import { BudgetProgress } from "@/components/common/BudgetProgress";
@@ -20,8 +22,16 @@ import { Button } from "@/components/ui/button";
 import { formatDate, formatINR } from "@/lib/format";
 import { MONTHS } from "@/lib/constants";
 import { STATUS_META } from "@/lib/calculations";
+import { listActivityPage } from "@/services/activity";
+import { ActivityList } from "@/components/activity/ActivityList";
+import { MemberFilter } from "@/components/common/MemberFilter";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { activitySearchSchema } from "@/lib/activity-queries";
+import { listFamilyMembers } from "@/services/family";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
+  validateSearch: (search: Record<string, unknown>) =>
+    activitySearchSchema.pick({ memberId: true }).parse(search),
   head: () => ({
     meta: [
       { title: "Dashboard · FamilyBudget" },
@@ -41,13 +51,40 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 
 function DashboardPage() {
   const { family, profile, user } = useAuth();
+  const { memberId } = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
   const now = new Date();
   const month = now.getMonth() + 1;
   const year = now.getFullYear();
 
   const query = useQuery({
-    queryKey: ["summary", family?.id, month, year],
-    queryFn: () => getMonthlySummary(month, year),
+    queryKey: ["summary", family?.id, month, year, memberId],
+    queryFn: () => getMonthlySummary(month, year, memberId),
+    enabled: Boolean(family?.id),
+    refetchOnWindowFocus: true,
+    refetchInterval: () =>
+      typeof document !== "undefined" && document.visibilityState === "visible" ? 30_000 : false,
+  });
+  const { from, to } = monthRange(month, year);
+  const privateExpensesQuery = useQuery({
+    queryKey: ["expenses", family?.id, month, year, "PRIVATE"],
+    queryFn: () => listExpenses(from, to, "PRIVATE"),
+    enabled: Boolean(family?.id),
+    refetchOnWindowFocus: true,
+    refetchInterval: () =>
+      typeof document !== "undefined" && document.visibilityState === "visible" ? 30_000 : false,
+  });
+  const activityQuery = useQuery({
+    queryKey: ["activity", family?.id, user?.id, "recent"],
+    queryFn: () => listActivityPage({ limit: 8 }),
+    enabled: Boolean(family?.id),
+    refetchOnWindowFocus: true,
+    refetchInterval: () =>
+      typeof document !== "undefined" && document.visibilityState === "visible" ? 30_000 : false,
+  });
+  const membersQuery = useQuery({
+    queryKey: ["members", family?.id],
+    queryFn: () => listFamilyMembers(),
     enabled: Boolean(family?.id),
   });
 
@@ -73,13 +110,23 @@ function DashboardPage() {
           </div>
         }
       />
+      <MemberFilter
+        members={membersQuery.data ?? []}
+        value={memberId}
+        selectedFormerName={
+          summary?.spendingByMember.find((item) => item.memberId === memberId)?.memberName
+        }
+        onChange={(nextId) =>
+          void navigate({ search: (previous) => ({ ...previous, memberId: nextId }) })
+        }
+      />
 
       {query.isLoading ? <CardSkeletons /> : null}
       {query.isError ? <ErrorState onRetry={() => void query.refetch()} /> : null}
 
       {summary ? (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
             <StatCard
               label="Monthly Budget"
               value={formatINR(summary.totalLimit)}
@@ -111,7 +158,53 @@ function DashboardPage() {
                     : "default"
               }
             />
+            <StatCard
+              label="My private spending"
+              value={formatINR(
+                fromPaise(
+                  (privateExpensesQuery.data ?? []).reduce(
+                    (sum, expense) => sum + expense.amount_paise,
+                    0,
+                  ),
+                ),
+              )}
+              hint={`${privateExpensesQuery.data?.length ?? 0} private expense${privateExpensesQuery.data?.length === 1 ? "" : "s"}`}
+              icon={IndianRupee}
+            />
           </div>
+          <p className="text-sm text-muted-foreground">Family totals exclude private expenses.</p>
+
+          <Card className="shadow-soft">
+            <CardHeader>
+              <CardTitle className="text-base">Spending by member</CardTitle>
+            </CardHeader>
+            <CardContent className="h-[260px]">
+              {summary.spendingByMember.length === 0 ? (
+                <EmptyState title="No shared spending for this selection" />
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={summary.spendingByMember} margin={{ bottom: 30 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis
+                      dataKey="memberName"
+                      fontSize={11}
+                      angle={-20}
+                      textAnchor="end"
+                      interval={0}
+                    />
+                    <YAxis fontSize={12} />
+                    <Tooltip formatter={(value) => formatINR(Number(value))} />
+                    <Bar
+                      dataKey="amount"
+                      name="Shared spending"
+                      fill="var(--primary)"
+                      radius={[6, 6, 0, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
 
           {summary.totalLimit === 0 ? (
             <EmptyState
@@ -204,6 +297,21 @@ function DashboardPage() {
                   ))}
                 </ul>
               )}
+            </CardContent>
+          </Card>
+          <Card className="shadow-soft">
+            <CardHeader className="flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-base">Recent activity</CardTitle>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/activity">View all</Link>
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {activityQuery.isError ? (
+                <ErrorState onRetry={() => void activityQuery.refetch()} />
+              ) : null}
+              {activityQuery.isPending ? <CardSkeletons count={1} /> : null}
+              {activityQuery.data ? <ActivityList items={activityQuery.data.items} /> : null}
             </CardContent>
           </Card>
         </>

@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { httpError, notFound } from "@/lib/http-error";
+import { countAllFamilyExpenses } from "@/lib/expense-queries";
+import { recordActivity } from "@/lib/activity-queries";
 
 export function hashInviteToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
@@ -52,7 +54,7 @@ export async function acceptInviteInTransaction(
       current?.role === "OWNER" &&
       current.family.ownerId === input.userId &&
       (await tx.familyMember.count({ where: { familyId: current.familyId } })) === 1 &&
-      (await tx.expense.count({ where: { familyId: current.familyId } })) === 0 &&
+      (await countAllFamilyExpenses(tx, current.familyId)) === 0 &&
       (await tx.budget.count({ where: { familyId: current.familyId } })) === 0;
 
     if (!canLeave) {
@@ -78,6 +80,22 @@ export async function acceptInviteInTransaction(
       role: invite.role,
     },
   });
+  await recordActivity(
+    tx,
+    {
+      familyId: invite.familyId,
+      memberId: member.id,
+      userId: input.userId,
+      role: member.role,
+      user: { id: input.userId, name: input.displayName, email: input.userEmail },
+    },
+    {
+      type: "MEMBER_JOINED",
+      entityType: "MEMBER",
+      entityId: member.id,
+      summary: { displayName: member.displayName.slice(0, 80), role: member.role },
+    },
+  );
   return { invite, member };
 }
 

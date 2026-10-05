@@ -16,6 +16,13 @@ import {
 import { httpError, notFound } from "@/lib/http-error";
 import { assertSameOrigin } from "@/lib/http-utils";
 import { DEFAULT_CATEGORIES } from "@/lib/default-categories";
+import {
+  groupSharedActivityByMember,
+  privateExpensesForMemberWhere,
+  sharedExpensesWhere,
+} from "@/lib/expense-queries";
+import { recordActivity } from "@/lib/activity-queries";
+import { assertMemberSettled } from "@/services/balances";
 
 export const getProfileFn = createServerFn({ method: "GET" }).handler(async () => {
   const auth = await requireMember("readAll");
@@ -71,14 +78,10 @@ export const listFamilyMembersFn = createServerFn({ method: "GET" }).handler(asy
   const auth = await requireMember("readAll");
   const [members, activities] = await Promise.all([
     prisma.familyMember.findMany({
-      where: { familyId: auth.familyId },
+      where: { familyId: auth.familyId, formerAt: null },
       orderBy: { createdAt: "asc" },
     }),
-    prisma.expense.groupBy({
-      by: ["memberId"],
-      where: { familyId: auth.familyId, memberId: { not: null } },
-      _max: { updatedAt: true },
-    }),
+    groupSharedActivityByMember(prisma, auth.familyId),
   ]);
   const lastActivity = new Map(
     activities.flatMap((item) =>
@@ -103,8 +106,16 @@ export const addFamilyMemberFn = createServerFn({ method: "POST" })
     assertSameOrigin();
     const auth = await requireMember("member:add");
     if (data.role === "ADMIN") assertCan(auth.role, "member:assignAdminRole");
-    await prisma.familyMember.create({
-      data: { familyId: auth.familyId, displayName: data.displayName, role: data.role },
+    await prisma.$transaction(async (tx) => {
+      const member = await tx.familyMember.create({
+        data: { familyId: auth.familyId, displayName: data.displayName, role: data.role },
+      });
+      await recordActivity(tx, auth, {
+        type: "MEMBER_JOINED",
+        entityType: "MEMBER",
+        entityId: member.id,
+        summary: { displayName: member.displayName.slice(0, 80), role: member.role },
+      });
     });
   });
 
@@ -113,22 +124,38 @@ export const removeFamilyMemberFn = createServerFn({ method: "POST" })
   .handler(async ({ data: id }) => {
     assertSameOrigin();
     const auth = await requireMember("member:remove");
-    await prisma.$transaction(async (tx) => {
-      const target = await tx.familyMember.findFirst({ where: { id, familyId: auth.familyId } });
-      if (!target) throw notFound("Family member not found");
-      if (target.id === auth.memberId) throw httpError("Use Leave family to remove yourself", 403);
-      if (target.role === "OWNER") assertCan(auth.role, "member:removeOwner");
-      if (target.role === "ADMIN") assertCan(auth.role, "member:removeAdmin");
-      await tx.expense.updateMany({
-        where: { familyId: auth.familyId, memberId: target.id },
-        data: { memberNameSnapshot: target.displayName },
-      });
-      // TODO(Phase 5): preserve splits and settlements before deleting a member.
-      const deleted = await tx.familyMember.deleteMany({
-        where: { id: target.id, familyId: auth.familyId, role: target.role },
-      });
-      if (!deleted.count) throw httpError("Member changed while removing; try again", 409);
-    });
+    await prisma.$transaction(
+      async (tx) => {
+        const target = await tx.familyMember.findFirst({
+          where: { id, familyId: auth.familyId, formerAt: null },
+        });
+        if (!target) throw notFound("Family member not found");
+        if (target.id === auth.memberId)
+          throw httpError("Use Leave family to remove yourself", 403);
+        if (target.role === "OWNER") assertCan(auth.role, "member:removeOwner");
+        if (target.role === "ADMIN") assertCan(auth.role, "member:removeAdmin");
+        await assertMemberSettled(tx, auth.familyId, target.id);
+        await recordActivity(tx, auth, {
+          type: "MEMBER_REMOVED",
+          entityType: "MEMBER",
+          entityId: target.id,
+          summary: { displayName: target.displayName.slice(0, 80), role: target.role },
+        });
+        await tx.expense.deleteMany({
+          where: privateExpensesForMemberWhere(auth.familyId, target.id),
+        });
+        await tx.expense.updateMany({
+          where: sharedExpensesWhere(auth.familyId, { memberId: target.id }),
+          data: { memberNameSnapshot: target.displayName, memberIdSnapshot: target.id },
+        });
+        const detached = await tx.familyMember.updateMany({
+          where: { id: target.id, familyId: auth.familyId, role: target.role, formerAt: null },
+          data: { formerAt: new Date(), userId: null },
+        });
+        if (!detached.count) throw httpError("Member changed while removing; try again", 409);
+      },
+      { isolationLevel: "Serializable" },
+    );
   });
 
 export const changeFamilyMemberRoleFn = createServerFn({ method: "POST" })
@@ -136,24 +163,39 @@ export const changeFamilyMemberRoleFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     assertSameOrigin();
     const auth = await requireMember("member:changeMemberRole");
-    const target = await prisma.familyMember.findFirst({
-      where: { id: data.id, familyId: auth.familyId },
-    });
-    if (!target) throw notFound("Family member not found");
-    if (target.id === auth.memberId && target.role === "OWNER") {
-      const owners = await prisma.familyMember.count({
-        where: { familyId: auth.familyId, role: "OWNER" },
-      });
-      if (owners === 1) throw httpError("Transfer ownership before changing your role", 409);
-    }
-    if (target.role === "OWNER") assertCan(auth.role, "member:changeOwnerRole");
-    if (target.role === "ADMIN") assertCan(auth.role, "member:changeAdminRole");
-    if (data.role === "ADMIN") assertCan(auth.role, "member:assignAdminRole");
-    const result = await prisma.familyMember.updateMany({
-      where: { id: target.id, familyId: auth.familyId, role: target.role },
-      data: { role: data.role },
-    });
-    if (!result.count) throw httpError("Member changed while updating; try again", 409);
+    await prisma.$transaction(
+      async (tx) => {
+        const target = await tx.familyMember.findFirst({
+          where: { id: data.id, familyId: auth.familyId, formerAt: null },
+        });
+        if (!target) throw notFound("Family member not found");
+        if (target.id === auth.memberId && target.role === "OWNER") {
+          const owners = await tx.familyMember.count({
+            where: { familyId: auth.familyId, role: "OWNER", formerAt: null },
+          });
+          if (owners === 1) throw httpError("Transfer ownership before changing your role", 409);
+        }
+        if (target.role === "OWNER") assertCan(auth.role, "member:changeOwnerRole");
+        if (target.role === "ADMIN") assertCan(auth.role, "member:changeAdminRole");
+        if (data.role === "ADMIN") assertCan(auth.role, "member:assignAdminRole");
+        const result = await tx.familyMember.updateMany({
+          where: { id: target.id, familyId: auth.familyId, role: target.role },
+          data: { role: data.role },
+        });
+        if (!result.count) throw httpError("Member changed while updating; try again", 409);
+        await recordActivity(tx, auth, {
+          type: "MEMBER_ROLE_CHANGED",
+          entityType: "MEMBER",
+          entityId: target.id,
+          summary: {
+            displayName: target.displayName.slice(0, 80),
+            oldRole: target.role,
+            newRole: data.role,
+          },
+        });
+      },
+      { isolationLevel: "Serializable" },
+    );
   });
 
 export const leaveFamilyFn = createServerFn({ method: "POST" })
@@ -161,21 +203,41 @@ export const leaveFamilyFn = createServerFn({ method: "POST" })
   .handler(async () => {
     assertSameOrigin();
     const auth = await requireMember("member:leave");
-    await prisma.$transaction(async (tx) => {
-      const member = await tx.familyMember.findFirst({
-        where: { id: auth.memberId, familyId: auth.familyId },
-      });
-      if (!member) throw notFound("Family member not found");
-      await tx.expense.updateMany({
-        where: { familyId: auth.familyId, memberId: member.id },
-        data: { memberNameSnapshot: member.displayName },
-      });
-      // TODO(Phase 5): preserve splits and settlements before deleting a member.
-      const removed = await tx.familyMember.deleteMany({
-        where: { id: member.id, familyId: auth.familyId, role: member.role },
-      });
-      if (!removed.count) throw notFound("Family member not found");
-    });
+    await prisma.$transaction(
+      async (tx) => {
+        const member = await tx.familyMember.findFirst({
+          where: { id: auth.memberId, familyId: auth.familyId, formerAt: null },
+        });
+        if (!member) throw notFound("Family member not found");
+        if (member.role === "OWNER") {
+          const ownerCount = await tx.familyMember.count({
+            where: { familyId: auth.familyId, role: "OWNER", formerAt: null },
+          });
+          if (ownerCount <= 1)
+            throw httpError("The sole OWNER must transfer ownership before leaving", 409);
+        }
+        await assertMemberSettled(tx, auth.familyId, member.id);
+        await recordActivity(tx, auth, {
+          type: "MEMBER_LEFT",
+          entityType: "MEMBER",
+          entityId: member.id,
+          summary: { displayName: member.displayName.slice(0, 80) },
+        });
+        await tx.expense.deleteMany({
+          where: privateExpensesForMemberWhere(auth.familyId, member.id),
+        });
+        await tx.expense.updateMany({
+          where: sharedExpensesWhere(auth.familyId, { memberId: member.id }),
+          data: { memberNameSnapshot: member.displayName, memberIdSnapshot: member.id },
+        });
+        const detached = await tx.familyMember.updateMany({
+          where: { id: member.id, familyId: auth.familyId, role: member.role, formerAt: null },
+          data: { formerAt: new Date(), userId: null },
+        });
+        if (!detached.count) throw notFound("Family member not found");
+      },
+      { isolationLevel: "Serializable" },
+    );
   });
 
 export const transferOwnershipFn = createServerFn({ method: "POST" })
@@ -189,13 +251,20 @@ export const transferOwnershipFn = createServerFn({ method: "POST" })
           where: { id: auth.familyId },
           select: { name: true, ownerId: true },
         }),
-        tx.familyMember.findFirst({ where: { id: data.targetMemberId, familyId: auth.familyId } }),
+        tx.familyMember.findFirst({
+          where: { id: data.targetMemberId, familyId: auth.familyId, formerAt: null },
+        }),
       ]);
       if (!target) throw notFound("Family member not found");
       if (!family || family.name !== data.familyNameConfirmation)
         throw httpError("Family name confirmation does not match", 400);
       if (!target.userId || target.id === auth.memberId)
         throw httpError("Choose another linked family account", 400);
+      const oldOwner = await tx.familyMember.findFirst({
+        where: { id: auth.memberId, familyId: auth.familyId },
+        select: { displayName: true },
+      });
+      if (!oldOwner) throw notFound("Family member not found");
       const claimed = await tx.family.updateMany({
         where: { id: auth.familyId, ownerId: auth.userId },
         data: { ownerId: target.userId },
@@ -212,6 +281,15 @@ export const transferOwnershipFn = createServerFn({ method: "POST" })
       });
       if (demoted.count !== 1 || promoted.count !== 1)
         throw httpError("Membership changed during transfer", 409);
+      await recordActivity(tx, auth, {
+        type: "OWNERSHIP_TRANSFERRED",
+        entityType: "FAMILY",
+        entityId: auth.familyId,
+        summary: {
+          oldOwnerName: oldOwner.displayName.slice(0, 80),
+          newOwnerName: target.displayName.slice(0, 80),
+        },
+      });
     });
   });
 

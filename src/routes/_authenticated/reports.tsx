@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -26,8 +26,13 @@ import { getMonthlySummary, getYearlyTrend } from "@/services/report";
 import { CATEGORY_COLORS, MONTHS } from "@/lib/constants";
 import { formatINR } from "@/lib/format";
 import { STATUS_META } from "@/lib/calculations";
+import { activitySearchSchema } from "@/lib/activity-queries";
+import { MemberFilter } from "@/components/common/MemberFilter";
+import { listFamilyMembers } from "@/services/family";
 
 export const Route = createFileRoute("/_authenticated/reports")({
+  validateSearch: (search: Record<string, unknown>) =>
+    activitySearchSchema.pick({ memberId: true }).parse(search),
   head: () => ({
     meta: [
       { title: "Reports · FamilyBudget" },
@@ -47,19 +52,26 @@ export const Route = createFileRoute("/_authenticated/reports")({
 
 function ReportsPage() {
   const { family } = useAuth();
+  const { memberId } = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
 
   const summaryQuery = useQuery({
-    queryKey: ["summary", family?.id, month, year],
-    queryFn: () => getMonthlySummary(month, year),
+    queryKey: ["summary", family?.id, month, year, memberId],
+    queryFn: () => getMonthlySummary(month, year, memberId),
     enabled: Boolean(family?.id),
   });
 
   const trendQuery = useQuery({
-    queryKey: ["trend", family?.id, year],
-    queryFn: () => getYearlyTrend(year),
+    queryKey: ["trend", family?.id, year, memberId],
+    queryFn: () => getYearlyTrend(year, memberId),
+    enabled: Boolean(family?.id),
+  });
+  const membersQuery = useQuery({
+    queryKey: ["members", family?.id],
+    queryFn: () => listFamilyMembers(),
     enabled: Boolean(family?.id),
   });
 
@@ -93,6 +105,17 @@ function ReportsPage() {
           />
         }
       />
+      <MemberFilter
+        members={membersQuery.data ?? []}
+        value={memberId}
+        selectedFormerName={
+          summaryQuery.data?.spendingByMember.find((item) => item.memberId === memberId)?.memberName
+        }
+        onChange={(nextId) =>
+          void navigate({ search: (previous) => ({ ...previous, memberId: nextId }) })
+        }
+      />
+      <p className="text-sm text-muted-foreground">Excludes private expenses.</p>
 
       {summaryQuery.isLoading ? <CardSkeletons count={2} /> : null}
       {summaryQuery.isError ? <ErrorState onRetry={() => void summaryQuery.refetch()} /> : null}
@@ -172,6 +195,38 @@ function ReportsPage() {
                         dot={{ r: 3 }}
                       />
                     </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-soft lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="text-base">Spending by member</CardTitle>
+              </CardHeader>
+              <CardContent className="h-[300px]">
+                {summary.spendingByMember.length === 0 ? (
+                  <EmptyState title="No shared spending for this selection" />
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={summary.spendingByMember} margin={{ bottom: 30 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis
+                        dataKey="memberName"
+                        fontSize={11}
+                        angle={-20}
+                        textAnchor="end"
+                        interval={0}
+                      />
+                      <YAxis fontSize={12} />
+                      <Tooltip formatter={tooltipFormatter} />
+                      <Bar
+                        dataKey="amount"
+                        name="Shared spending"
+                        fill="var(--primary)"
+                        radius={[6, 6, 0, 0]}
+                      />
+                    </BarChart>
                   </ResponsiveContainer>
                 )}
               </CardContent>

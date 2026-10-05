@@ -39,6 +39,10 @@ The Members page shows each household member's role, join date, and most recent 
 
 Removal and leaving preserve historical expense attribution: the expense's member reference is cleared and its display name is snapshotted, so history appears as “Former member (Name)”. Deleted members' pending invites remain valid and show the creator's current role or “REMOVED”; OWNER/ADMIN can still revoke them. Users removed from a family lose access on their next server request. They can create a new family or accept an invite while signed in. A unique membership constraint keeps each account in at most one family.
 
+## Expense visibility
+
+Expenses are SHARED by default. PRIVATE expenses are visible only to their creator and appear in the Expenses page's “My private spending” filter and personal dashboard total. Private expenses are excluded from family reports, dashboard totals, budgets, and member activity. The `src/lib/expense-queries.ts` module centralizes visibility-aware reads; its architecture test prevents direct expense reads elsewhere. Removing or leaving as a member permanently deletes that member's private expenses while preserving shared expense history with a display-name snapshot. The invite solo-family switch treats even private expenses as financial activity and will not delete a family that contains them.
+
 Create reviewed migrations for schema development using `npx prisma migrate dev --name <description>`. Do not use `prisma db push` for deployed environments.
 
 ## Checks
@@ -65,6 +69,14 @@ This project builds with Nitro's `node-server` preset and uses the standard Pris
 4. Check `https://<your-service>.onrender.com/api/health` after deployment.
 
 For a local production smoke check, build with `npm run build`, set the production environment variables, run `npx prisma migrate deploy`, and start with `npm run start`.
+
+## Splits and settle-up
+
+Equal splits use the **remainder rule**: divide the integer-paise amount evenly, then give each remaining paise one at a time to participants sorted by `memberId` ascending. Every participant must receive at least one paise. Exact splits must contain positive integer-paise shares totaling the expense amount. Percentage splits use basis points and largest-remainder allocation, with ties resolved by ascending `memberId`.
+
+Balances include only shared expenses that have an explicit split. Ordinary shared expenses without splits are household spending and do not create member debts. A settlement can be deleted by its creator within 24 hours, or by an OWNER/ADMIN at any time. A settlement above the current debt is accepted and creates an opposite balance.
+
+When a member leaves or is removed, the account is detached and its membership is retained as a former-member record while shared expense, split, and settlement history references it. The user loses access immediately; private expenses are deleted. A member with a non-zero balance must settle up first.
 
 ## Data migration note
 

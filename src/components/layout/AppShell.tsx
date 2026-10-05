@@ -11,6 +11,7 @@ import {
   LogOut,
   Menu,
   PiggyBank,
+  ArrowLeftRight,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ const NAV = [
   { to: "/budgets", label: "Budgets", icon: Wallet },
   { to: "/expenses", label: "Expenses", icon: ReceiptIndianRupee },
   { to: "/members", label: "Members", icon: Users },
+  { to: "/balances", label: "Balances", icon: ArrowLeftRight },
   { to: "/reports", label: "Reports", icon: PieChart },
   { to: "/profile", label: "Settings", icon: Settings },
 ] as const;

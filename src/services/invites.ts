@@ -9,6 +9,7 @@ import {
   assertInviteAcceptRateLimit,
 } from "@/lib/invite-acceptance";
 import { httpError, notFound } from "@/lib/http-error";
+import { recordActivity } from "@/lib/activity-queries";
 import {
   acceptInviteSchema,
   idSchema,
@@ -60,19 +61,32 @@ export const createInviteFn = createServerFn({ method: "POST" })
 
     const token = randomBytes(32).toString("base64url");
     const creator = await prisma.familyMember.findFirst({
-      where: { id: auth.memberId, familyId: auth.familyId },
+      where: { id: auth.memberId, familyId: auth.familyId, formerAt: null },
       select: { displayName: true },
     });
-    const invite = await prisma.invite.create({
-      data: {
-        familyId: auth.familyId,
-        createdByMemberId: auth.memberId,
-        createdByDisplayNameSnapshot: creator?.displayName || auth.user.name,
-        role: data.role,
-        tokenHash: hashInviteToken(token),
-        email: data.email || null,
-        expiresAt: new Date(Date.now() + SEVEN_DAYS),
-      },
+    const invite = await prisma.$transaction(async (tx) => {
+      const creator = await tx.familyMember.findFirst({
+        where: { id: auth.memberId, familyId: auth.familyId, formerAt: null },
+        select: { displayName: true },
+      });
+      const createdInvite = await tx.invite.create({
+        data: {
+          familyId: auth.familyId,
+          createdByMemberId: auth.memberId,
+          createdByDisplayNameSnapshot: creator?.displayName || auth.user.name,
+          role: data.role,
+          tokenHash: hashInviteToken(token),
+          email: data.email || null,
+          expiresAt: new Date(Date.now() + SEVEN_DAYS),
+        },
+      });
+      await recordActivity(tx, auth, {
+        type: "INVITE_CREATED",
+        entityType: "INVITE",
+        entityId: createdInvite.id,
+        summary: { role: createdInvite.role },
+      });
+      return createdInvite;
     });
     return {
       id: invite.id,
@@ -102,7 +116,9 @@ export const listPendingInvitesFn = createServerFn({ method: "GET" }).handler(as
     expiresAt: invite.expiresAt.toISOString(),
     createdAt: invite.createdAt.toISOString(),
     createdBy: invite.createdByMember?.displayName || invite.createdByDisplayNameSnapshot,
-    creatorStatus: invite.createdByMember?.role ?? "REMOVED",
+    creatorStatus: invite.createdByMember?.formerAt
+      ? "REMOVED"
+      : (invite.createdByMember?.role ?? "REMOVED"),
   }));
 });
 
@@ -111,17 +127,35 @@ export const revokeInviteFn = createServerFn({ method: "POST" })
   .handler(async ({ data: id }) => {
     assertSameOrigin();
     const auth = await requireMember("invite:revoke");
-    const revoked = await prisma.invite.updateMany({
-      where: {
-        id,
-        familyId: auth.familyId,
-        usedAt: null,
-        revokedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-      data: { revokedAt: new Date() },
+    await prisma.$transaction(async (tx) => {
+      const invite = await tx.invite.findFirst({
+        where: {
+          id,
+          familyId: auth.familyId,
+          usedAt: null,
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+      });
+      if (!invite) throw notFound("Invitation not found.");
+      const revoked = await tx.invite.updateMany({
+        where: {
+          id,
+          familyId: auth.familyId,
+          usedAt: null,
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        data: { revokedAt: new Date() },
+      });
+      if (revoked.count === 0) throw notFound("Invitation not found.");
+      await recordActivity(tx, auth, {
+        type: "INVITE_REVOKED",
+        entityType: "INVITE",
+        entityId: invite.id,
+        summary: { role: invite.role },
+      });
     });
-    if (revoked.count === 0) throw notFound("Invitation not found.");
   });
 
 export const acceptInviteFn = createServerFn({ method: "POST" })

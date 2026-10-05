@@ -20,7 +20,7 @@ export async function assertCategoryInFamily(
 
 export async function assertMemberInFamily(auth: AuthContext, memberId: string) {
   const member = await prisma.familyMember.findFirst({
-    where: { id: memberId, familyId: auth.familyId },
+    where: { id: memberId, familyId: auth.familyId, formerAt: null },
   });
   if (!member) throw notFound("Family member not found");
   return member;
