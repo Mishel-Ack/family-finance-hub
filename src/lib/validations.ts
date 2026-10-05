@@ -120,12 +120,19 @@ export const acceptInviteSchema = z.object({
 export const registerWithInviteSchema = registerServerSchema.extend({ token: inviteTokenSchema });
 export const memberAddSchema = z.object({
   displayName: z.string().trim().min(2).max(80),
-  role: z.enum(["ADMIN", "MEMBER", "VIEWER", "OWNER"]),
+  role: z.enum(["ADMIN", "MEMBER", "VIEWER"]),
 });
 export const memberRoleChangeSchema = z.object({
   id: idSchema,
-  role: z.enum(["ADMIN", "MEMBER", "VIEWER", "OWNER"]),
+  role: z.enum(["ADMIN", "MEMBER", "VIEWER"]),
 });
+export const ownDisplayNameSchema = z.string().trim().min(1).max(50);
+export const transferOwnershipSchema = z.object({
+  targetMemberId: idSchema,
+  familyNameConfirmation: z.string().min(1).max(80),
+});
+export const createFamilySchema = z.string().trim().min(2).max(80);
+export const emptyInputSchema = z.undefined();
 export const categoryCreateSchema = z.object({
   name: z.string().trim().min(1).max(40),
   color: z

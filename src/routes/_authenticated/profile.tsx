@@ -18,13 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
-import {
-  addFamilyMember,
-  listFamilyMembers,
-  removeFamilyMember,
-  renameFamily,
-  updateProfileName,
-} from "@/services/family";
+import { renameFamily, updateOwnDisplayName, updateProfileName } from "@/services/family";
 import { profileSchema } from "@/lib/validations";
 import type { FamilyRole } from "@/types";
 import { createInvite, listPendingInvites, revokeInvite } from "@/services/invites";
@@ -44,16 +38,13 @@ export const Route = createFileRoute("/_authenticated/profile")({
   component: ProfilePage,
 });
 
-const ROLES = ["ADMIN", "MEMBER", "VIEWER"];
-
 function ProfilePage() {
-  const { profile, family, role, user, canEdit, refresh } = useAuth();
+  const { profile, family, role, canEdit, displayName: currentDisplayName, refresh } = useAuth();
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [familyName, setFamilyName] = useState("");
   const [error, setError] = useState("");
-  const [memberName, setMemberName] = useState("");
-  const [memberRole, setMemberRole] = useState("MEMBER");
+  const [displayName, setDisplayName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"ADMIN" | "MEMBER" | "VIEWER">("MEMBER");
   const [newInviteLink, setNewInviteLink] = useState("");
@@ -62,13 +53,8 @@ function ProfilePage() {
   useEffect(() => {
     setName(profile?.name ?? "");
     setFamilyName(family?.name ?? "");
-  }, [profile?.name, family?.name]);
-
-  const membersQuery = useQuery({
-    queryKey: ["members", family?.id],
-    queryFn: () => (family?.id ? listFamilyMembers() : Promise.resolve([])),
-    enabled: Boolean(family?.id),
-  });
+    setDisplayName(currentDisplayName ?? "");
+  }, [profile?.name, family?.name, currentDisplayName]);
 
   const invitesQuery = useQuery({
     queryKey: ["pending-invites", family?.id],
@@ -149,25 +135,11 @@ function ProfilePage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const addMember = useMutation({
-    mutationFn: async () => {
-      const trimmed = memberName.trim();
-      if (trimmed.length < 2) throw new Error("Member name must be at least 2 characters");
-      await addFamilyMember(trimmed, memberRole as FamilyRole);
-    },
-    onSuccess: () => {
-      setMemberName("");
-      toast.success("Family member added");
-      void queryClient.invalidateQueries({ queryKey: ["members"] });
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  const deleteMember = useMutation({
-    mutationFn: async (id: string) => removeFamilyMember(id),
-    onSuccess: () => {
-      toast.success("Family member removed");
-      void queryClient.invalidateQueries({ queryKey: ["members"] });
+  const saveDisplayName = useMutation({
+    mutationFn: () => updateOwnDisplayName(displayName),
+    onSuccess: async () => {
+      toast.success("Display name updated");
+      await refresh();
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -202,6 +174,22 @@ function ProfilePage() {
             </div>
             <Button onClick={() => saveName.mutate()} disabled={saveName.isPending}>
               Save changes
+            </Button>
+            <div className="space-y-1.5">
+              <Label htmlFor="member-display-name">Family display name</Label>
+              <Input
+                id="member-display-name"
+                value={displayName}
+                maxLength={50}
+                onChange={(event) => setDisplayName(event.target.value)}
+              />
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => saveDisplayName.mutate()}
+              disabled={saveDisplayName.isPending}
+            >
+              Save display name
             </Button>
           </CardContent>
         </Card>
@@ -239,75 +227,13 @@ function ProfilePage() {
       </div>
 
       <Card className="shadow-soft">
-        <CardHeader>
-          <CardTitle className="text-base">Family members</CardTitle>
-          <CardDescription>
-            People in your household. Expenses can be attributed to any of them.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Input
-              placeholder="Member name"
-              aria-label="New family member name"
-              value={memberName}
-              maxLength={80}
-              disabled={!canEdit}
-              onChange={(e) => setMemberName(e.target.value)}
-            />
-            <Select value={memberRole} onValueChange={setMemberRole}>
-              <SelectTrigger className="sm:w-40" aria-label="Member role">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ROLES.map((r) => (
-                  <SelectItem key={r} value={r}>
-                    {r}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button onClick={() => addMember.mutate()} disabled={!canEdit || addMember.isPending}>
-              <Plus className="mr-1 h-4 w-4" /> Add
-            </Button>
-          </div>
-
-          {membersQuery.isLoading ? <LoadingState label="Loading members…" /> : null}
-          {membersQuery.isError ? <ErrorState onRetry={() => void membersQuery.refetch()} /> : null}
-          {membersQuery.data ? (
-            membersQuery.data.length === 0 ? (
-              <EmptyState title="No family members yet" />
-            ) : (
-              <ul className="divide-y divide-border">
-                {membersQuery.data.map((member) => (
-                  <li key={member.id} className="flex items-center justify-between gap-3 py-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">
-                        {member.display_name || "Member"}
-                        {member.user_id === user?.id ? " (you)" : ""}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {member.user_id ? "Linked account" : "Household member"}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary">{member.role}</Badge>
-                      {member.role !== "OWNER" && canEdit ? (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          aria-label={`Remove ${member.display_name}`}
-                          onClick={() => deleteMember.mutate(member.id)}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      ) : null}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )
-          ) : null}
+        <CardContent className="flex items-center justify-between gap-3 pt-6">
+          <p className="text-sm text-muted-foreground">
+            Manage family members, roles and ownership.
+          </p>
+          <Button asChild variant="outline">
+            <a href="/members">Open members</a>
+          </Button>
         </CardContent>
       </Card>
 
@@ -380,7 +306,7 @@ function ProfilePage() {
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {invite.role} · expires {new Date(invite.expiresAt).toLocaleDateString()} ·
-                        created by {invite.createdBy}
+                        created by {invite.createdBy} · creator status: {invite.creatorStatus}
                       </p>
                     </div>
                     <Button

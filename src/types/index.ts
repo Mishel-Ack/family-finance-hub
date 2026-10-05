@@ -31,6 +31,8 @@ export interface FamilyMember {
   display_name: string;
   role: FamilyRole;
   created_at?: string;
+  last_activity_at?: string | null;
+  is_you?: boolean;
 }
 
 export interface Category {

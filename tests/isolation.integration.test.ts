@@ -42,14 +42,19 @@ import {
 import {
   addFamilyMemberFn,
   changeFamilyMemberRoleFn,
+  createFamilyFn,
   getMembershipFn,
   getProfileFn,
   listFamilyMembersFn,
   removeFamilyMemberFn,
+  leaveFamilyFn,
+  transferOwnershipFn,
+  updateOwnDisplayNameFn,
   renameFamilyFn,
   updateProfileNameFn,
 } from "@/services/family";
 import { getMonthlySummaryFn, getYearlyTrendFn } from "@/services/report";
+import { createInviteFn, listPendingInvitesFn, revokeInviteFn } from "@/services/invites";
 import {
   configureAuthTests,
   loginFn,
@@ -202,6 +207,16 @@ afterEach(async () => {
 afterAll(async () => prisma.$disconnect());
 
 describe("PostgreSQL service isolation integration", () => {
+  it("lists family members with roles, join date, activity, and the current user marker", async () => {
+    const members = await listFamilyMembersFn();
+    const owner = members.find((member) => member.id === familyA.owner.member.id);
+    const unusedMember = members.find((member) => member.id === familyA.member!.member.id);
+    expect(owner).toMatchObject({ role: "OWNER", is_you: true });
+    expect(owner?.created_at).toBe(familyA.owner.member.createdAt.toISOString());
+    expect(owner?.last_activity_at).not.toBeNull();
+    expect(unusedMember).toMatchObject({ role: "MEMBER", is_you: false, last_activity_at: null });
+  });
+
   it("isolates expense, budget, report, category, and member reads and writes by family", async () => {
     selectAuth(authFor(familyB, familyB.owner, "OWNER"));
     const expenses = await listExpensesFn({ data: {} });
@@ -379,7 +394,7 @@ describe("PostgreSQL service isolation integration", () => {
   });
 
   it("restricts hard deletion of used categories while archived expenses remain readable", async () => {
-    selectAuth(authFor(familyA, familyA.owner, "OWNER"));
+    selectAuth(authFor(familyA, familyA.admin!, "ADMIN"));
     await expect(deleteCategoryFn({ data: familyA.categoryId })).rejects.toThrow(
       "This category has expenses. Archive it instead.",
     );
@@ -471,6 +486,190 @@ describe("PostgreSQL service isolation integration", () => {
     setHeadersForTests({ host: "familybudget.test" });
     await expect(updateProfileNameFn({ data: "Changed Name" })).rejects.toMatchObject({
       statusCode: 403,
+    });
+  });
+
+  it("enforces every actor, target, and requested role combination", async () => {
+    const actors: Array<[Role, FixtureMember]> = [
+      ["OWNER", familyA.owner],
+      ["ADMIN", familyA.admin!],
+      ["MEMBER", familyA.member!],
+      ["VIEWER", familyA.viewer!],
+    ];
+    const targets: Array<[Role, FixtureMember]> = actors;
+    const nextRoles = ["ADMIN", "MEMBER", "VIEWER"] as const;
+    for (const [actorRole, actor] of actors) {
+      for (const [targetRole, target] of targets) {
+        for (const nextRole of nextRoles) {
+          await Promise.all(
+            actors.map(([originalRole, member]) =>
+              prisma.familyMember.update({
+                where: { id: member.member.id },
+                data: { role: originalRole },
+              }),
+            ),
+          );
+          await prisma.familyMember.update({
+            where: { id: target.member.id },
+            data: { role: targetRole },
+          });
+          selectAuth(authFor(familyA, actor, actorRole));
+          const allowed =
+            targetRole !== "OWNER" &&
+            (actorRole === "OWNER" ||
+              (actorRole === "ADMIN" &&
+                (targetRole === "MEMBER" || targetRole === "VIEWER") &&
+                nextRole !== "ADMIN"));
+          const call = changeFamilyMemberRoleFn({ data: { id: target.member.id, role: nextRole } });
+          if (allowed) {
+            await expect(call).resolves.toBeUndefined();
+            expect(
+              (await prisma.familyMember.findUniqueOrThrow({ where: { id: target.member.id } }))
+                .role,
+            ).toBe(nextRole);
+          } else {
+            await expect(call).rejects.toMatchObject({
+              statusCode: targetRole === "OWNER" && actorRole === "OWNER" ? 409 : 403,
+            });
+          }
+        }
+      }
+    }
+  });
+
+  it("restricts removal, preserves expense history, and immediately rejects the removed account", async () => {
+    const target = familyA.member!;
+    const expense = await prisma.expense.create({
+      data: {
+        familyId: familyA.familyId,
+        userId: familyA.owner.user.id,
+        memberId: target.member.id,
+        categoryId: familyA.categoryId,
+        amountPaise: 4200,
+        date: new Date("2026-10-01T00:00:00Z"),
+        description: "History",
+      },
+    });
+    selectAuth(authFor(familyA, familyA.admin!, "ADMIN"));
+    await expect(removeFamilyMemberFn({ data: familyA.owner.member.id })).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    await expect(
+      changeFamilyMemberRoleFn({ data: { id: familyA.admin!.member.id, role: "MEMBER" } }),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    await expect(removeFamilyMemberFn({ data: familyA.admin!.member.id })).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    await expect(removeFamilyMemberFn({ data: familyA.owner.member.id })).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    selectAuth(authFor(familyA, target, "MEMBER"));
+    await updateOwnDisplayNameFn({ data: "  Changed Name  " });
+    expect(
+      (await prisma.familyMember.findUniqueOrThrow({ where: { id: target.member.id } }))
+        .displayName,
+    ).toBe("Changed Name");
+    expect(
+      (await prisma.expense.findUniqueOrThrow({ where: { id: expense.id } })).memberNameSnapshot,
+    ).toBeNull();
+    process.env["APP_ORIGIN"] = "http://familybudget.test";
+    selectAuth(authFor(familyA, familyA.owner, "OWNER"));
+    selectAuth(authFor(familyA, familyA.admin!, "ADMIN"));
+    const adminInvite = await createInviteFn({ data: { role: "MEMBER" } });
+    selectAuth(authFor(familyA, familyA.owner, "OWNER"));
+    await removeFamilyMemberFn({ data: familyA.admin!.member.id });
+    expect(
+      (await prisma.invite.findUniqueOrThrow({ where: { id: adminInvite.id } })).createdByMemberId,
+    ).toBeNull();
+    expect(
+      (await listPendingInvitesFn()).find((invite) => invite.id === adminInvite.id)?.creatorStatus,
+    ).toBe("REMOVED");
+    await revokeInviteFn({ data: adminInvite.id });
+    await removeFamilyMemberFn({ data: target.member.id });
+    const saved = await prisma.expense.findUniqueOrThrow({ where: { id: expense.id } });
+    expect(saved.memberId).toBeNull();
+    expect(saved.memberNameSnapshot).toBe("Changed Name");
+    expect(
+      (await listExpensesFn({ data: {} })).find((item) => item.id === expense.id)?.family_member,
+    ).toBe("Former member (Changed Name)");
+    selectAuth(authFor(familyA, target, "MEMBER"));
+    await expect(listFamilyMembersFn()).rejects.toMatchObject({ statusCode: 401 });
+  });
+
+  it("blocks sole-owner leave/demotion and makes ownership transfer race-safe", async () => {
+    await expect(leaveFamilyFn({ data: undefined })).rejects.toMatchObject({ statusCode: 403 });
+    await expect(
+      changeFamilyMemberRoleFn({ data: { id: familyA.owner.member.id, role: "MEMBER" } }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    const candidates = [familyA.admin!, familyA.member!];
+    const transfers = candidates.map((candidate) =>
+      transferOwnershipFn({
+        data: { targetMemberId: candidate.member.id, familyNameConfirmation: "Alpha household" },
+      }),
+    );
+    const results = await Promise.allSettled(transfers);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(
+      await prisma.familyMember.count({ where: { familyId: familyA.familyId, role: "OWNER" } }),
+    ).toBe(1);
+  });
+
+  it("lets an ADMIN remove only MEMBER/VIEWER and lets ordinary members leave with history", async () => {
+    const anotherAdminUser = await createUser("Second admin", "second-admin@example.test");
+    const anotherAdmin = await prisma.familyMember.create({
+      data: {
+        familyId: familyA.familyId,
+        userId: anotherAdminUser.id,
+        displayName: "Second admin",
+        role: "ADMIN",
+      },
+    });
+    selectAuth(authFor(familyA, familyA.admin!, "ADMIN"));
+    await expect(removeFamilyMemberFn({ data: anotherAdmin.id })).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    await expect(removeFamilyMemberFn({ data: familyA.owner.member.id })).rejects.toMatchObject({
+      statusCode: 403,
+    });
+
+    const member = familyA.member!;
+    const expense = await prisma.expense.create({
+      data: {
+        familyId: familyA.familyId,
+        userId: familyA.owner.user.id,
+        memberId: member.member.id,
+        categoryId: familyA.categoryId,
+        amountPaise: 1234,
+        date: new Date("2026-10-02T00:00:00Z"),
+      },
+    });
+    selectAuth(authFor(familyA, member, "MEMBER"));
+    await leaveFamilyFn({ data: undefined });
+    const saved = await prisma.expense.findUniqueOrThrow({ where: { id: expense.id } });
+    expect(saved.memberId).toBeNull();
+    expect(saved.memberNameSnapshot).toBe(member.member.displayName);
+  });
+
+  it("allows a membership-free account to create exactly one family and returns 404 for foreign member IDs", async () => {
+    selectAuth(authFor(familyA, familyA.owner, "OWNER"));
+    await expect(removeFamilyMemberFn({ data: familyB.owner.member.id })).rejects.toMatchObject({
+      statusCode: 404,
+    });
+    await expect(
+      changeFamilyMemberRoleFn({ data: { id: familyB.owner.member.id, role: "MEMBER" } }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    const user = await createUser("Familyless", "familyless@example.test");
+    selectAuth({
+      userId: user.id,
+      familyId: familyA.familyId,
+      memberId: familyA.owner.member.id,
+      role: "OWNER",
+      user: { id: user.id, name: user.name, email: user.email },
+    });
+    await createFamilyFn({ data: "My new family" });
+    expect(await prisma.familyMember.count({ where: { userId: user.id } })).toBe(1);
+    await expect(createFamilyFn({ data: "Second family" })).rejects.toMatchObject({
+      statusCode: 409,
     });
   });
 

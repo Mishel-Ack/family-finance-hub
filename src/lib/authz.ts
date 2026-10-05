@@ -11,6 +11,16 @@ export type Action =
   | "member:add"
   | "member:remove"
   | "member:changeRole"
+  | "member:changeMemberRole"
+  | "member:removeAdmin"
+  | "member:removeOwner"
+  | "member:changeAdminRole"
+  | "member:changeOwnerRole"
+  | "member:assignAdminRole"
+  | "member:leave"
+  | "member:transferOwnership"
+  | "member:updateDisplayName"
+  | "family:create"
   | "invite:create"
   | "invite:createAdmin"
   | "invite:list"
@@ -31,6 +41,13 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "member:add",
     "member:remove",
     "member:changeRole",
+    "member:changeMemberRole",
+    "member:removeAdmin",
+    "member:changeAdminRole",
+    "member:assignAdminRole",
+    "member:transferOwnership",
+    "member:updateDisplayName",
+    "family:create",
     "invite:create",
     "invite:createAdmin",
     "invite:list",
@@ -47,10 +64,14 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
   ADMIN: new Set<Action>([
     "family:rename",
     "member:add",
+    "member:changeMemberRole",
     "invite:create",
     "invite:list",
     "invite:revoke",
     "member:remove",
+    "member:leave",
+    "member:updateDisplayName",
+    "family:create",
     "budget:manage",
     "category:manage",
     "expense:create",
@@ -60,8 +81,16 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "expense:deleteOwn",
     "readAll",
   ]),
-  MEMBER: new Set<Action>(["expense:create", "expense:editOwn", "expense:deleteOwn", "readAll"]),
-  VIEWER: new Set<Action>(["readAll"]),
+  MEMBER: new Set<Action>([
+    "expense:create",
+    "expense:editOwn",
+    "expense:deleteOwn",
+    "readAll",
+    "member:leave",
+    "member:updateDisplayName",
+    "family:create",
+  ]),
+  VIEWER: new Set<Action>(["readAll", "member:leave", "member:updateDisplayName", "family:create"]),
 };
 
 export function can(role: Role, action: Action): boolean {
@@ -87,6 +116,12 @@ export interface AuthContext {
   };
 }
 
+export interface SessionUserContext {
+  userId: string;
+  user: { id: string; name: string; email: string };
+  membership: { familyId: string; memberId: string; role: Role } | null;
+}
+
 let testAuthResolver: (() => Promise<AuthContext | null>) | undefined;
 
 export function setAuthResolverForTests(resolver: (() => Promise<AuthContext | null>) | undefined) {
@@ -96,21 +131,24 @@ export function setAuthResolverForTests(resolver: (() => Promise<AuthContext | n
   testAuthResolver = resolver;
 }
 
-export async function requireAuth(): Promise<AuthContext> {
+export async function requireSessionUser(): Promise<SessionUserContext> {
+  let userId: string | undefined;
   if (testAuthResolver) {
     const testAuth = await testAuthResolver();
     if (!testAuth) throw httpError("Please sign in to continue", 401);
-    return testAuth;
+    userId = testAuth.userId;
+  } else {
+    const cookieHeader = getHeader("cookie");
+    const payload = await parseSessionFromHeader(cookieHeader);
+    userId = payload?.userId;
   }
-  const cookieHeader = getHeader("cookie");
-  const payload = await parseSessionFromHeader(cookieHeader);
 
-  if (!payload || !payload.userId) {
+  if (!userId) {
     throw httpError("Please sign in to continue", 401);
   }
 
   const user = await prisma.user.findUnique({
-    where: { id: payload.userId },
+    where: { id: userId },
     select: { id: true, name: true, email: true },
   });
 
@@ -124,17 +162,21 @@ export async function requireAuth(): Promise<AuthContext> {
     include: { family: true },
   });
 
-  if (!membership || !membership.family) {
-    throw httpError("No family membership is available for this account", 401);
-  }
-
   return {
     userId: user.id,
-    familyId: membership.familyId,
-    memberId: membership.id,
-    role: (membership.role as Role) || "MEMBER",
     user,
+    membership: membership?.family
+      ? { familyId: membership.familyId, memberId: membership.id, role: membership.role }
+      : null,
   };
+}
+
+export async function requireAuth(): Promise<AuthContext> {
+  const session = await requireSessionUser();
+  if (!session.membership) {
+    throw httpError("No family membership is available for this account", 401);
+  }
+  return { ...session.membership, userId: session.userId, user: session.user };
 }
 
 export async function requireMember(action?: Action): Promise<AuthContext> {
