@@ -5,6 +5,7 @@ import {
   Wallet,
   ReceiptIndianRupee,
   PieChart,
+  Users,
   UserRound,
   Settings,
   LogOut,
@@ -21,6 +22,7 @@ const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/budgets", label: "Budgets", icon: Wallet },
   { to: "/expenses", label: "Expenses", icon: ReceiptIndianRupee },
+  { to: "/members", label: "Members", icon: Users },
   { to: "/reports", label: "Reports", icon: PieChart },
   { to: "/profile", label: "Settings", icon: Settings },
 ] as const;

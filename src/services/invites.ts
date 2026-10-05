@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createServerFn } from "@tanstack/react-start";
 import { prisma } from "@/lib/prisma";
-import { assertCan, requireAuth, requireMember } from "@/lib/authz";
+import { assertCan, requireSessionUser, requireMember } from "@/lib/authz";
 import { assertSameOrigin, getHeader } from "@/lib/http-utils";
 import {
   hashInviteToken,
@@ -35,8 +35,9 @@ export const getInviteDetailsFn = createServerFn({ method: "GET" })
     return {
       familyName: invite.family.name,
       inviterName:
-        invite.createdByMember.displayName ||
-        invite.createdByMember.user?.name ||
+        invite.createdByMember?.displayName ||
+        invite.createdByMember?.user?.name ||
+        invite.createdByDisplayNameSnapshot ||
         "A family member",
       role: invite.role,
       expiresAt: invite.expiresAt.toISOString(),
@@ -58,10 +59,15 @@ export const createInviteFn = createServerFn({ method: "POST" })
     }
 
     const token = randomBytes(32).toString("base64url");
+    const creator = await prisma.familyMember.findFirst({
+      where: { id: auth.memberId, familyId: auth.familyId },
+      select: { displayName: true },
+    });
     const invite = await prisma.invite.create({
       data: {
         familyId: auth.familyId,
         createdByMemberId: auth.memberId,
+        createdByDisplayNameSnapshot: creator?.displayName || auth.user.name,
         role: data.role,
         tokenHash: hashInviteToken(token),
         email: data.email || null,
@@ -95,7 +101,8 @@ export const listPendingInvitesFn = createServerFn({ method: "GET" }).handler(as
     email: invite.email,
     expiresAt: invite.expiresAt.toISOString(),
     createdAt: invite.createdAt.toISOString(),
-    createdBy: invite.createdByMember.displayName,
+    createdBy: invite.createdByMember?.displayName || invite.createdByDisplayNameSnapshot,
+    creatorStatus: invite.createdByMember?.role ?? "REMOVED",
   }));
 });
 
@@ -121,7 +128,7 @@ export const acceptInviteFn = createServerFn({ method: "POST" })
   .validator(acceptInviteSchema)
   .handler(async ({ data }) => {
     assertSameOrigin();
-    const auth = await requireAuth();
+    const auth = await requireSessionUser();
     assertInviteAcceptRateLimit(
       getHeader("x-forwarded-for") ?? getHeader("x-real-ip") ?? "unknown",
     );

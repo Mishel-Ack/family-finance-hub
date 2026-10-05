@@ -72,6 +72,7 @@ describe("authz.ts permission matrix unit tests", () => {
       "member:add",
       "member:remove",
       "member:changeRole",
+      "member:changeMemberRole",
       "budget:manage",
       "category:manage",
       "expense:create",

@@ -67,20 +67,21 @@ model FamilyMember {
 }
 
 model Invite {
-  id                String       @id @default(uuid())
-  familyId          String
-  family            Family       @relation(fields: [familyId], references: [id], onDelete: Cascade)
-  createdByMemberId String
-  createdByMember   FamilyMember @relation(fields: [createdByMemberId], references: [id], onDelete: Cascade)
-  role              InviteRole
-  tokenHash         String       @unique
-  email             String?
-  expiresAt         DateTime
-  usedAt            DateTime?
-  usedByUserId      String?
-  usedByUser        User?        @relation(fields: [usedByUserId], references: [id], onDelete: SetNull)
-  revokedAt         DateTime?
-  createdAt         DateTime     @default(now())
+  id                           String        @id @default(uuid())
+  familyId                     String
+  family                       Family        @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  createdByMemberId            String?
+  createdByMember              FamilyMember? @relation(fields: [createdByMemberId], references: [id], onDelete: SetNull)
+  createdByDisplayNameSnapshot String        @default("")
+  role                         InviteRole
+  tokenHash                    String        @unique
+  email                        String?
+  expiresAt                    DateTime
+  usedAt                       DateTime?
+  usedByUserId                 String?
+  usedByUser                   User?         @relation(fields: [usedByUserId], references: [id], onDelete: SetNull)
+  revokedAt                    DateTime?
+  createdAt                    DateTime      @default(now())
 
   @@index([familyId, revokedAt, usedAt, expiresAt])
 }
@@ -134,20 +135,21 @@ model BudgetCategory {
 }
 
 model Expense {
-  id          String        @id @default(uuid())
-  familyId    String
-  family      Family        @relation(fields: [familyId], references: [id], onDelete: Cascade)
-  userId      String
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  memberId    String?
-  member      FamilyMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
-  categoryId  String
-  category    Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  amountPaise Int
-  date        DateTime      @default(now())
-  description String        @default("")
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id                 String        @id @default(uuid())
+  familyId           String
+  family             Family        @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  userId             String
+  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memberId           String?
+  member             FamilyMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  memberNameSnapshot String?
+  categoryId         String
+  category           Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  amountPaise        Int
+  date               DateTime      @default(now())
+  description        String        @default("")
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
   @@index([familyId, date])
   @@index([familyId, categoryId])

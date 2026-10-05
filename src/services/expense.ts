@@ -48,7 +48,9 @@ export const listExpensesFn = createServerFn({ method: "GET" })
           category: e.category?.name ?? "General",
           date: e.date.toISOString().slice(0, 10),
           description: e.description,
-          family_member: e.member?.displayName ?? "",
+          family_member:
+            e.member?.displayName ??
+            (e.memberNameSnapshot ? `Former member (${e.memberNameSnapshot})` : ""),
           created_at: e.createdAt.toISOString(),
         }) as Expense,
     );
