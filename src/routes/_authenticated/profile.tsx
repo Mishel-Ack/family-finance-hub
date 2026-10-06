@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/hooks/auth-context";
 import { renameFamily, updateOwnDisplayName, updateProfileName } from "@/services/family";
 import { profileSchema } from "@/lib/validations";
 import type { FamilyRole } from "@/types";

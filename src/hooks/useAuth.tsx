@@ -1,29 +1,7 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { getSessionFn, logoutFn } from "@/services/auth.server";
 import { getMembership, getProfile } from "@/services/family";
-import type { Family, FamilyRole, Profile } from "@/types";
-
-interface SessionUser {
-  id: string;
-  name: string;
-  email: string;
-}
-
-interface AuthContextValue {
-  session: SessionUser | null;
-  user: SessionUser | null;
-  profile: Profile | null;
-  family: Family | null;
-  role: FamilyRole | null;
-  displayName: string | null;
-  memberId: string | null;
-  loading: boolean;
-  canEdit: boolean;
-  refresh: () => Promise<void>;
-  signOut: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+import { AuthContext, type AuthContextValue } from "@/hooks/auth-context";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<SessionUser | null>(null);
@@ -104,8 +82,3 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
-  return ctx;
-}
