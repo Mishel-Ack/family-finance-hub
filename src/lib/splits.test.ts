@@ -71,6 +71,17 @@ describe("split calculations", () => {
         { memberId: "c", basisPoints: 3333 },
       ]),
     ).toThrow(/10000/);
+    expect(
+      computePercentSplit(10002, [
+        { memberId: "c", basisPoints: 3334 },
+        { memberId: "b", basisPoints: 3333 },
+        { memberId: "a", basisPoints: 3333 },
+      ]),
+    ).toEqual([
+      { memberId: "a", sharePaise: 3334 },
+      { memberId: "b", sharePaise: 3333 },
+      { memberId: "c", sharePaise: 3335 },
+    ]);
   });
 });
 

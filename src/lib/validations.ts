@@ -74,11 +74,17 @@ export const splitInputSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("EQUAL"), memberIds: z.array(idSchema).min(1).max(100) }),
   z.object({
     mode: z.literal("EXACT"),
-    participants: z.array(z.object({ memberId: idSchema, sharePaise: z.number().int().positive() })).min(1).max(100),
+    participants: z
+      .array(z.object({ memberId: idSchema, sharePaise: z.number().int().positive() }))
+      .min(1)
+      .max(100),
   }),
   z.object({
     mode: z.literal("PERCENT"),
-    participants: z.array(z.object({ memberId: idSchema, basisPoints: z.number().int().positive().max(10000) })).min(1).max(100),
+    participants: z
+      .array(z.object({ memberId: idSchema, basisPoints: z.number().int().positive().max(10000) }))
+      .min(1)
+      .max(100),
   }),
 ]);
 export const expenseSchema = z.object({
