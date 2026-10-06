@@ -1810,6 +1810,102 @@ describe("PostgreSQL service isolation integration", () => {
     expect(JSON.stringify(logs.map(({ summary }) => summary))).not.toContain("private note");
   });
 
+  it("enforces split creator/admin/owner and settlement payer/receiver/viewer permissions", async () => {
+    const member = familyA.member!;
+    const admin = familyA.admin!;
+    const viewer = familyA.viewer!;
+    selectAuth(authFor(familyA, familyA.owner, "OWNER"));
+    await createExpenseFn({
+      data: {
+        amount: 30,
+        categoryId: familyA.categoryId,
+        date: "2026-10-06",
+        memberId: familyA.owner.member.id,
+      },
+    });
+    const expense = await prisma.expense.findFirstOrThrow({
+      where: { familyId: familyA.familyId, date: new Date("2026-10-06T00:00:00Z") },
+    });
+    selectAuth(authFor(familyA, member, "MEMBER"));
+    await expect(
+      updateExpenseFn({
+        data: {
+          id: expense.id,
+          input: {
+            amount: 30,
+            categoryId: familyA.categoryId,
+            date: "2026-10-06",
+            split: { mode: "EQUAL", memberIds: [familyA.owner.member.id, member.member.id] },
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+
+    selectAuth(authFor(familyA, admin, "ADMIN"));
+    await updateExpenseFn({
+      data: {
+        id: expense.id,
+        input: {
+          amount: 30,
+          categoryId: familyA.categoryId,
+          date: "2026-10-06",
+          split: { mode: "EQUAL", memberIds: [familyA.owner.member.id, member.member.id] },
+        },
+      },
+    });
+
+    selectAuth(authFor(familyA, familyA.owner, "OWNER"));
+    await updateExpenseFn({
+      data: {
+        id: expense.id,
+        input: {
+          amount: 30,
+          categoryId: familyA.categoryId,
+          date: "2026-10-06",
+          split: {
+            mode: "EXACT",
+            participants: [{ memberId: member.member.id, sharePaise: 3000 }],
+          },
+        },
+      },
+    });
+
+    selectAuth(authFor(familyA, member, "MEMBER"));
+    await recordSettlementFn({
+      data: {
+        fromMemberId: member.member.id,
+        toMemberId: familyA.owner.member.id,
+        amount: 2,
+      },
+    });
+    selectAuth(authFor(familyA, familyA.owner, "OWNER"));
+    await recordSettlementFn({
+      data: {
+        fromMemberId: viewer.member.id,
+        toMemberId: familyA.owner.member.id,
+        amount: 2,
+      },
+    });
+    selectAuth(authFor(familyA, viewer, "VIEWER"));
+    await expect(
+      recordSettlementFn({
+        data: {
+          fromMemberId: viewer.member.id,
+          toMemberId: familyA.owner.member.id,
+          amount: 2,
+        },
+      }),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    selectAuth(authFor(familyA, admin, "ADMIN"));
+    await recordSettlementFn({
+      data: {
+        fromMemberId: member.member.id,
+        toMemberId: viewer.member.id,
+        amount: 3,
+      },
+    });
+  });
+
   it("keeps concurrent settlement and split writes atomic with zero-sum balances", async () => {
     const member = familyA.member!;
     selectAuth(authFor(familyA, familyA.owner, "OWNER"));
