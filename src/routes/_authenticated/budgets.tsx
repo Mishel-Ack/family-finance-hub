@@ -43,7 +43,7 @@ import {
   updateCategory,
   archiveCategory,
 } from "@/services/category";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/hooks/auth-context";
 import { getMonthlySummary } from "@/services/report";
 import {
   upsertBudget,
@@ -108,10 +108,11 @@ function BudgetsPage() {
     enabled: Boolean(family?.id),
   });
   const summary = query.data;
+  const totalLimit = summary?.totalLimit;
 
   useEffect(() => {
-    setTotalInput(summary && summary.totalLimit > 0 ? String(summary.totalLimit) : "");
-  }, [summary?.totalLimit, month, year]);
+    setTotalInput(totalLimit && totalLimit > 0 ? String(totalLimit) : "");
+  }, [totalLimit, month, year]);
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["summary"] });

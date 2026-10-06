@@ -20,7 +20,7 @@ import {
 import { getBalances, recordSettlement, deleteSettlement } from "@/services/balances";
 import { formatINR } from "@/lib/format";
 import { fromPaise, toPaise } from "@/lib/money";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/hooks/auth-context";
 
 export const Route = createFileRoute("/_authenticated/balances")({ component: BalancesPage });
 

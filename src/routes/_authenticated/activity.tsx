@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CardSkeletons, ErrorState } from "@/components/common/States";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/hooks/auth-context";
 import { listActivityPage } from "@/services/activity";
 import { listFamilyMembers } from "@/services/family";
 import { activitySearchSchema, type ActivityFilter } from "@/lib/activity-queries";

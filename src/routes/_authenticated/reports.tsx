@@ -21,7 +21,7 @@ import { MonthSelector } from "@/components/common/MonthSelector";
 import { CardSkeletons, EmptyState, ErrorState } from "@/components/common/States";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/hooks/auth-context";
 import { getMonthlySummary, getYearlyTrend } from "@/services/report";
 import { CATEGORY_COLORS, MONTHS } from "@/lib/constants";
 import { formatINR } from "@/lib/format";

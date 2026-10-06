@@ -8,7 +8,7 @@ import {
   ReceiptIndianRupee,
   TrendingDown,
 } from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/hooks/auth-context";
 import { getMonthlySummary, monthRange } from "@/services/report";
 import { listExpenses } from "@/services/expense";
 import { fromPaise } from "@/lib/money";

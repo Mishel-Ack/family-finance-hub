@@ -45,7 +45,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/hooks/auth-context";
 import { listCategories } from "@/services/category";
 import { listFamilyMembers } from "@/services/family";
 import { listExpenses, createExpense, updateExpense, deleteExpense } from "@/services/expense";
