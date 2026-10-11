@@ -142,6 +142,14 @@ Balances include only shared expenses that have an explicit split. Ordinary shar
 
 When a member leaves or is removed, the account is detached and its membership is retained as a former-member record while shared expense, split, and settlement history references it. The user loses access immediately; private expenses are deleted. If a member who owes money cannot settle, an OWNER/ADMIN can record a settlement on their behalf to zero the balance, then remove them.
 
+## Planning, insights and monthly story
+
+The What-if Planner runs a deterministic 1,000-run projection from the last six calendar months of **shared** expenses. It supports a savings target and reports when the family has too little history or has not configured income. Forecasts are estimates, not guarantees. Sinking funds and goals are family-scoped; fund contributions are recorded as explicit contribution rows rather than expenses. The monthly set-aside is derived from the remaining target and whole months to the due date.
+
+The dashboard Insights panel and the `/story` report use shared expense reads through `src/lib/expense-queries.ts`. Story reports are recomputed on demand by OWNER/ADMIN and stored idempotently per family and month. CSV export offers shared rows or shared rows plus only the caller's own private rows; spreadsheet formula-leading cells are escaped and paise is formatted without floating point math.
+
+The app includes a static offline page and install manifest. Its service worker caches only the offline page, manifest and icon; it does not cache API responses or provide offline expense synchronization. Voice entry uses the browser's Web Speech API when supported and sends the transcript through the normal draft parser; recognition quality depends on the browser and device.
+
 ## Demo seed
 
 Run `npm run seed:demo` against a local development database to create the deterministic Sharma Family demo household. The script refuses production and remote database targets by default. It creates four accounts (`demo-owner@example.com`, `demo-admin@example.com`, `demo-member@example.com`, and `demo-viewer@example.com`) with one shared password, printed only in non-production. The seed is idempotent; `npm run seed:demo -- --reset` deletes only the deterministic demo family and recreates its records.

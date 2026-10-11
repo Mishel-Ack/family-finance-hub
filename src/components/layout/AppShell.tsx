@@ -18,6 +18,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { NotificationCenter } from "@/components/layout/NotificationCenter";
 import { useAuth } from "@/hooks/auth-context";
 
 const NAV = [
@@ -27,6 +28,8 @@ const NAV = [
   { to: "/members", label: "Members", icon: Users },
   { to: "/balances", label: "Balances", icon: ArrowLeftRight },
   { to: "/reports", label: "Reports", icon: PieChart },
+  { to: "/story", label: "Money Story", icon: PieChart },
+  { to: "/approvals", label: "Approvals", icon: ReceiptIndianRupee },
   { to: "/planner", label: "Planner", icon: SlidersHorizontal },
   { to: "/profile", label: "Settings", icon: Settings },
 ] as const;
@@ -113,6 +116,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        <NotificationCenter />
         <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-border bg-background/85 px-4 py-3 backdrop-blur lg:hidden">
           <div className="flex items-center gap-3">
             <Sheet open={open} onOpenChange={setOpen}>

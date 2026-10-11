@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { runPlanner } from "@/services/planner";
 import { toPaise } from "@/lib/money";
 import type { ScenarioChange, SimulationResult } from "@/lib/ml/simulate";
+import { PlanningAssetsPanel } from "@/components/planning/PlanningAssetsPanel";
 
 export const Route = createFileRoute("/_authenticated/planner")({
   head: () => ({ meta: [{ title: "Planner · FamilyBudget" }] }),
@@ -102,6 +103,7 @@ function PlannerPage() {
           </CardContent>
         </Card>
       )}
+      <PlanningAssetsPanel />
     </div>
   );
 }

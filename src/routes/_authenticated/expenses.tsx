@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Download, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState, ErrorState, LoadingState } from "@/components/common/States";
 import { Card, CardContent } from "@/components/ui/card";
@@ -55,6 +55,7 @@ import type { Expense } from "@/types";
 import { computeEqualSplit, computeExactSplit, computePercentSplit } from "@/lib/splits";
 import { toPaise } from "@/lib/money";
 import { SmartAddDialog } from "@/components/expenses/SmartAddDialog";
+import { expensesToCsv } from "@/lib/csv-export";
 
 export const Route = createFileRoute("/_authenticated/expenses")({
   head: () => ({
@@ -159,6 +160,30 @@ function ExpensesPage() {
   }, [query.data, search, category, from, to, sort]);
 
   const total = rows.reduce((sum, e) => sum + Number(e.amount), 0);
+
+  const exportCsv = async (includePrivate: boolean) => {
+    try {
+      const exportRows = await listExpenses(
+        undefined,
+        undefined,
+        includePrivate ? "VISIBLE" : "SHARED",
+      );
+      const blob = new Blob([expensesToCsv(exportRows, includePrivate)], {
+        type: "text/csv;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = includePrivate
+        ? "familybudget-shared-and-my-private.csv"
+        : "familybudget-shared.csv";
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success("CSV export downloaded");
+    } catch {
+      toast.error("Could not export expenses. Please try again.");
+    }
+  };
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["expenses"] });
@@ -299,8 +324,14 @@ function ExpensesPage() {
         title="Expenses"
         description="Every rupee your family spends, in one searchable list."
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <SmartAddDialog />
+            <Button variant="outline" onClick={() => void exportCsv(false)}>
+              <Download className="mr-1 h-4 w-4" /> Shared CSV
+            </Button>
+            <Button variant="outline" onClick={() => void exportCsv(true)}>
+              <Download className="mr-1 h-4 w-4" /> Include my private
+            </Button>
             <Button onClick={openCreate} disabled={!canEdit}>
               <Plus className="mr-1 h-4 w-4" /> Add expense
             </Button>

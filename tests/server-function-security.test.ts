@@ -134,6 +134,19 @@ const validInputs: Record<string, unknown> = {
   createSinkingFundFn: { name: "Emergency", targetPaise: 10000, dueDate: "2027-01-01" },
   createGoalFn: { name: "Car", targetPaise: 100000, targetDate: "2027-01-01" },
   contributeToFundFn: { fundId: "00000000-0000-4000-8000-000000000001", amountPaise: 100 },
+  getFamilyStoryFn: { month: 10, year: 2026 },
+  generateFamilyStoryFn: { month: 10, year: 2026 },
+  listPurchaseRequestsFn: undefined,
+  submitPurchaseRequestFn: {
+    title: "New appliance",
+    amountPaise: 10000,
+    categoryId: "00000000-0000-4000-8000-000000000001",
+  },
+  decidePurchaseRequestFn: { id: "00000000-0000-4000-8000-000000000001", status: "APPROVED" },
+  cancelPurchaseRequestFn: "00000000-0000-4000-8000-000000000001",
+  listNotificationsFn: undefined,
+  markNotificationReadFn: "00000000-0000-4000-8000-000000000001",
+  markAllNotificationsReadFn: undefined,
   updateProfileNameFn: "Updated Name",
   updateOwnDisplayNameFn: "Updated Name",
   addFamilyMemberFn: { displayName: "New Member", role: "MEMBER" },
@@ -328,7 +341,32 @@ describe("server-function security coverage", () => {
       },
     });
     const fundB = await prisma.sinkingFund.create({
-      data: { familyId: familyB.id, name: "B Fund", targetPaise: 1000, dueDate: new Date("2027-01-01") },
+      data: {
+        familyId: familyB.id,
+        name: "B Fund",
+        targetPaise: 1000,
+        dueDate: new Date("2027-01-01"),
+      },
+    });
+    const requestB = await prisma.purchaseRequest.create({
+      data: {
+        familyId: familyB.id,
+        requesterMemberId: memberB.id,
+        title: "Foreign request",
+        amountPaise: 100,
+        categoryId: categoryB.id,
+        impactSnapshot: {},
+      },
+    });
+    const notificationB = await prisma.notification.create({
+      data: {
+        familyId: familyB.id,
+        userId: ownerB.id,
+        type: "FAMILY_UPDATE",
+        title: "Private test fixture",
+        body: "Fixture",
+        dedupeKey: `security-${suffix}`,
+      },
     });
 
     setAuthResolverForTests(async () => ({
@@ -373,6 +411,9 @@ describe("server-function security coverage", () => {
       dismissInsightFn: insightB.id,
       giveInsightFeedbackFn: { insightId: insightB.id, verdict: "USEFUL" },
       contributeToFundFn: { fundId: fundB.id, amountPaise: 100 },
+      decidePurchaseRequestFn: { id: requestB.id, status: "APPROVED" },
+      cancelPurchaseRequestFn: requestB.id,
+      markNotificationReadFn: notificationB.id,
     };
     // The registry is deliberately exhaustive: a new ID-accepting endpoint must add a case here.
     const idEndpoints = [
@@ -396,6 +437,9 @@ describe("server-function security coverage", () => {
       "dismissInsightFn",
       "giveInsightFeedbackFn",
       "contributeToFundFn",
+      "decidePurchaseRequestFn",
+      "cancelPurchaseRequestFn",
+      "markNotificationReadFn",
       "getMonthlySummaryFn",
       "getYearlyTrendFn",
       "listActivityFn",
@@ -439,6 +483,12 @@ describe("server-function security coverage", () => {
       "getPlanningAssetsFn",
       "createSinkingFundFn",
       "createGoalFn",
+      "listPurchaseRequestsFn",
+      "submitPurchaseRequestFn",
+      "listNotificationsFn",
+      "markAllNotificationsReadFn",
+      "getFamilyStoryFn",
+      "generateFamilyStoryFn",
       "getInviteDetailsFn",
       "acceptInviteFn",
     ];

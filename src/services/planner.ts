@@ -79,7 +79,8 @@ export const runPlannerFn = createServerFn({ method: "POST" })
           month.getUTCMonth() === expense.date.getUTCMonth(),
       );
       const categoryHistory = historyByCategory[expense.categoryId];
-      if (index >= 0 && categoryHistory) categoryHistory[index] = (categoryHistory[index] ?? 0) + expense.amountPaise;
+      if (index >= 0 && categoryHistory)
+        categoryHistory[index] = (categoryHistory[index] ?? 0) + expense.amountPaise;
     }
     return simulateScenario({
       historyByCategory,

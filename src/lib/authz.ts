@@ -47,7 +47,12 @@ export type Action =
   | "insight:setIncome"
   | "planner:run"
   | "fund:manage"
-  | "fund:contribute";
+  | "fund:contribute"
+  | "report:generate"
+  | "purchase:submit"
+  | "purchase:decide"
+  | "purchase:cancelOwn"
+  | "notification:read";
 
 const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
   OWNER: new Set<Action>([
@@ -91,6 +96,11 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "planner:run",
     "fund:manage",
     "fund:contribute",
+    "report:generate",
+    "purchase:submit",
+    "purchase:decide",
+    "purchase:cancelOwn",
+    "notification:read",
   ]),
   ADMIN: new Set<Action>([
     "family:rename",
@@ -124,6 +134,11 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "planner:run",
     "fund:manage",
     "fund:contribute",
+    "report:generate",
+    "purchase:submit",
+    "purchase:decide",
+    "purchase:cancelOwn",
+    "notification:read",
   ]),
   MEMBER: new Set<Action>([
     "expense:create",
@@ -141,6 +156,9 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "family:create",
     "planner:run",
     "fund:contribute",
+    "purchase:submit",
+    "purchase:cancelOwn",
+    "notification:read",
   ]),
   VIEWER: new Set<Action>([
     "readAll",
@@ -149,6 +167,7 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "member:updateDisplayName",
     "family:create",
     "planner:run",
+    "notification:read",
   ]),
 };
 

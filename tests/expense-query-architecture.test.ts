@@ -17,6 +17,12 @@ const insightModelQueryPattern =
   /\.(?:insight|incomeProfile|insightFeedback)\.(?:findMany|findFirst|findUnique|findUniqueOrThrow|count|groupBy|aggregate|create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/g;
 const familyAssetQueryPattern =
   /\.(?:sinkingFund|fundContribution|goal)\.(?:findMany|findFirst|findUnique|findUniqueOrThrow|count|groupBy|aggregate|create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/g;
+const monthlyReportQueryPattern =
+  /\.monthlyReport\.(?:findMany|findFirst|findUnique|findUniqueOrThrow|count|groupBy|aggregate|create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/g;
+const purchaseRequestQueryPattern =
+  /\.purchaseRequest\.(?:findMany|findFirst|findUnique|findUniqueOrThrow|count|groupBy|aggregate|create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/g;
+const notificationQueryPattern =
+  /\.(?:notification|notificationPreference)\.(?:findMany|findFirst|findUnique|findUniqueOrThrow|count|groupBy|aggregate|create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/g;
 
 function typescriptFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -98,9 +104,14 @@ describe("expense query choke point", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("keeps Insight, IncomeProfile and InsightFeedback access in the insights service", () => {
+  it("keeps Insight and InsightFeedback access in the insights service", () => {
     const offenders = typescriptFiles(srcRoot)
-      .filter((path) => relative(srcRoot, path).replaceAll("\\", "/") !== "services/insights.ts")
+      .filter(
+        (path) =>
+          !["services/insights.ts", "services/planner.ts"].includes(
+            relative(srcRoot, path).replaceAll("\\", "/"),
+          ),
+      )
       .flatMap((path) => {
         const contents = readFileSync(path, "utf8");
         return [...contents.matchAll(insightModelQueryPattern)].map(
@@ -113,11 +124,58 @@ describe("expense query choke point", () => {
 
   it("keeps sinking fund, contribution and goal access in the planning service", () => {
     const offenders = typescriptFiles(srcRoot)
-      .filter((path) => relative(srcRoot, path).replaceAll("\\", "/") !== "services/planning-assets.ts")
+      .filter(
+        (path) => relative(srcRoot, path).replaceAll("\\", "/") !== "services/planning-assets.ts",
+      )
       .flatMap((path) => {
         const contents = readFileSync(path, "utf8");
         return [...contents.matchAll(familyAssetQueryPattern)].map(
-          (match) => `${relative(srcRoot, path)}:${contents.slice(0, match.index).split("\n").length}`,
+          (match) =>
+            `${relative(srcRoot, path)}:${contents.slice(0, match.index).split("\n").length}`,
+        );
+      });
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps monthly report access in the family story service", () => {
+    const offenders = typescriptFiles(srcRoot)
+      .filter(
+        (path) => relative(srcRoot, path).replaceAll("\\", "/") !== "services/family-story.ts",
+      )
+      .flatMap((path) => {
+        const contents = readFileSync(path, "utf8");
+        return [...contents.matchAll(monthlyReportQueryPattern)].map(
+          (match) =>
+            `${relative(srcRoot, path)}:${contents.slice(0, match.index).split("\n").length}`,
+        );
+      });
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps purchase request reads and writes in the purchase request service", () => {
+    const offenders = typescriptFiles(srcRoot)
+      .filter(
+        (path) => relative(srcRoot, path).replaceAll("\\", "/") !== "services/purchase-requests.ts",
+      )
+      .flatMap((path) => {
+        const contents = readFileSync(path, "utf8");
+        return [...contents.matchAll(purchaseRequestQueryPattern)].map(
+          (match) =>
+            `${relative(srcRoot, path)}:${contents.slice(0, match.index).split("\n").length}`,
+        );
+      });
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps notification access behind the notification service or creation helper", () => {
+    const allowed = ["services/notifications.ts", "lib/notifications.ts"];
+    const offenders = typescriptFiles(srcRoot)
+      .filter((path) => !allowed.includes(relative(srcRoot, path).replaceAll("\\", "/")))
+      .flatMap((path) => {
+        const contents = readFileSync(path, "utf8");
+        return [...contents.matchAll(notificationQueryPattern)].map(
+          (match) =>
+            `${relative(srcRoot, path)}:${contents.slice(0, match.index).split("\n").length}`,
         );
       });
     expect(offenders).toEqual([]);
