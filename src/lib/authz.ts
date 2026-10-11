@@ -39,7 +39,15 @@ export type Action =
   | "settlement:deleteOwn"
   | "settlement:deleteAny"
   | "activity:read"
-  | "readAll";
+  | "readAll"
+  | "ai:use"
+  | "ai:manage"
+  | "category:correct"
+  | "insight:feedback"
+  | "insight:setIncome"
+  | "planner:run"
+  | "fund:manage"
+  | "fund:contribute";
 
 const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
   OWNER: new Set<Action>([
@@ -75,6 +83,14 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "settlement:deleteAny",
     "readAll",
     "activity:read",
+    "ai:use",
+    "ai:manage",
+    "category:correct",
+    "insight:feedback",
+    "insight:setIncome",
+    "planner:run",
+    "fund:manage",
+    "fund:contribute",
   ]),
   ADMIN: new Set<Action>([
     "family:rename",
@@ -101,6 +117,13 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "settlement:deleteAny",
     "readAll",
     "activity:read",
+    "ai:use",
+    "category:correct",
+    "insight:feedback",
+    "insight:setIncome",
+    "planner:run",
+    "fund:manage",
+    "fund:contribute",
   ]),
   MEMBER: new Set<Action>([
     "expense:create",
@@ -113,7 +136,11 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "activity:read",
     "member:leave",
     "member:updateDisplayName",
+    "category:correct",
+    "insight:feedback",
     "family:create",
+    "planner:run",
+    "fund:contribute",
   ]),
   VIEWER: new Set<Action>([
     "readAll",
@@ -121,6 +148,7 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "member:leave",
     "member:updateDisplayName",
     "family:create",
+    "planner:run",
   ]),
 };
 

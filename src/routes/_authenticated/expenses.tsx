@@ -54,6 +54,7 @@ import { formatDate, formatINR, todayISO } from "@/lib/format";
 import type { Expense } from "@/types";
 import { computeEqualSplit, computeExactSplit, computePercentSplit } from "@/lib/splits";
 import { toPaise } from "@/lib/money";
+import { SmartAddDialog } from "@/components/expenses/SmartAddDialog";
 
 export const Route = createFileRoute("/_authenticated/expenses")({
   head: () => ({
@@ -298,9 +299,12 @@ function ExpensesPage() {
         title="Expenses"
         description="Every rupee your family spends, in one searchable list."
         actions={
-          <Button onClick={openCreate} disabled={!canEdit}>
-            <Plus className="mr-1 h-4 w-4" /> Add expense
-          </Button>
+          <div className="flex gap-2">
+            <SmartAddDialog />
+            <Button onClick={openCreate} disabled={!canEdit}>
+              <Plus className="mr-1 h-4 w-4" /> Add expense
+            </Button>
+          </div>
         }
       />
 

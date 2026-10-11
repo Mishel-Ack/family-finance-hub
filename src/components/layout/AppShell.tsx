@@ -12,6 +12,7 @@ import {
   Menu,
   PiggyBank,
   ArrowLeftRight,
+  SlidersHorizontal,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ const NAV = [
   { to: "/members", label: "Members", icon: Users },
   { to: "/balances", label: "Balances", icon: ArrowLeftRight },
   { to: "/reports", label: "Reports", icon: PieChart },
+  { to: "/planner", label: "Planner", icon: SlidersHorizontal },
   { to: "/profile", label: "Settings", icon: Settings },
 ] as const;
 

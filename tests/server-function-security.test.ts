@@ -112,6 +112,28 @@ const validInputs: Record<string, unknown> = {
     amount: 1,
   },
   deleteSettlementFn: "00000000-0000-4000-8000-000000000001",
+  getAiSettingsFn: undefined,
+  setAiEnabledFn: { enabled: true },
+  suggestCategoryFn: { text: "Swiggy" },
+  saveCategoryCorrectionFn: {
+    text: "Swiggy",
+    categoryId: "00000000-0000-4000-8000-000000000001",
+    scope: "SHARED",
+  },
+  parseExpenseTextFn: "450 groceries",
+  parseReceiptFn: { base64: "/9j/AA==", mediaType: "image/jpeg" },
+  parseBankMessagesFn: { messages: ["Rs 500 debited at Swiggy"] },
+  getAiAvailabilityFn: undefined,
+  getIncomeProfileFn: undefined,
+  listInsightsFn: undefined,
+  dismissInsightFn: "00000000-0000-4000-8000-000000000001",
+  giveInsightFeedbackFn: { insightId: "00000000-0000-4000-8000-000000000001", verdict: "USEFUL" },
+  setIncomeProfileFn: 100000,
+  runPlannerFn: [],
+  getPlanningAssetsFn: undefined,
+  createSinkingFundFn: { name: "Emergency", targetPaise: 10000, dueDate: "2027-01-01" },
+  createGoalFn: { name: "Car", targetPaise: 100000, targetDate: "2027-01-01" },
+  contributeToFundFn: { fundId: "00000000-0000-4000-8000-000000000001", amountPaise: 100 },
   updateProfileNameFn: "Updated Name",
   updateOwnDisplayNameFn: "Updated Name",
   addFamilyMemberFn: { displayName: "New Member", role: "MEMBER" },
@@ -296,6 +318,18 @@ describe("server-function security coverage", () => {
         amountPaise: 1,
       },
     });
+    const insightB = await prisma.insight.create({
+      data: {
+        familyId: familyB.id,
+        type: "FORECAST",
+        key: "security",
+        payload: {},
+        severity: "LOW",
+      },
+    });
+    const fundB = await prisma.sinkingFund.create({
+      data: { familyId: familyB.id, name: "B Fund", targetPaise: 1000, dueDate: new Date("2027-01-01") },
+    });
 
     setAuthResolverForTests(async () => ({
       userId: ownerA.id,
@@ -305,6 +339,7 @@ describe("server-function security coverage", () => {
       user: { id: ownerA.id, name: ownerA.name, email: ownerA.email },
     }));
     // Filters that intentionally return an empty collection instead of 404 are checked separately below.
+    const declarations = sourceDeclarations();
     const crossFamilyCalls: Record<string, unknown> = {
       listBudgetCategoriesFn: budgetB.id,
       deleteBudgetFn: budgetB.id,
@@ -330,6 +365,14 @@ describe("server-function security coverage", () => {
       revokeInviteFn: inviteB.id,
       deleteSettlementFn: settlementB.id,
       recordSettlementFn: { fromMemberId: memberB.id, toMemberId: extraB.id, amount: 1 },
+      saveCategoryCorrectionFn: {
+        text: "Swiggy",
+        categoryId: categoryB.id,
+        scope: "SHARED",
+      },
+      dismissInsightFn: insightB.id,
+      giveInsightFeedbackFn: { insightId: insightB.id, verdict: "USEFUL" },
+      contributeToFundFn: { fundId: fundB.id, amountPaise: 100 },
     };
     // The registry is deliberately exhaustive: a new ID-accepting endpoint must add a case here.
     const idEndpoints = [
@@ -349,9 +392,57 @@ describe("server-function security coverage", () => {
       "revokeInviteFn",
       "deleteSettlementFn",
       "recordSettlementFn",
+      "saveCategoryCorrectionFn",
+      "dismissInsightFn",
+      "giveInsightFeedbackFn",
+      "contributeToFundFn",
       "getMonthlySummaryFn",
+      "getYearlyTrendFn",
       "listActivityFn",
     ];
+    // Explicit exception registry: these functions accept no family-scoped record IDs.
+    // Auth and invite entry points accept credentials, while create and report inputs carry values.
+    const nonIdEndpoints = [
+      "getSessionFn",
+      "loginFn",
+      "registerFn",
+      "logoutFn",
+      "registerWithInviteFn",
+      "getBalancesFn",
+      "listExpensesFn",
+      "listCategoriesFn",
+      "getProfileFn",
+      "updateProfileNameFn",
+      "updateOwnDisplayNameFn",
+      "getMembershipFn",
+      "listFamilyMembersFn",
+      "addFamilyMemberFn",
+      "leaveFamilyFn",
+      "createFamilyFn",
+      "renameFamilyFn",
+      "getBudgetFn",
+      "upsertBudgetFn",
+      "createCategoryFn",
+      "listPendingInvitesFn",
+      "createInviteFn",
+      "getAiSettingsFn",
+      "setAiEnabledFn",
+      "suggestCategoryFn",
+      "parseExpenseTextFn",
+      "parseReceiptFn",
+      "parseBankMessagesFn",
+      "getAiAvailabilityFn",
+      "listInsightsFn",
+      "setIncomeProfileFn",
+      "getIncomeProfileFn",
+      "runPlannerFn",
+      "getPlanningAssetsFn",
+      "createSinkingFundFn",
+      "createGoalFn",
+      "getInviteDetailsFn",
+      "acceptInviteFn",
+    ];
+    expect([...idEndpoints, ...nonIdEndpoints].sort()).toEqual([...declarations.keys()].sort());
     for (const name of idEndpoints) {
       if (name === "getMonthlySummaryFn") {
         const result = (await endpoints.get(name)!({
@@ -365,6 +456,13 @@ describe("server-function security coverage", () => {
           data: { memberId: memberB.id, limit: 20 },
         })) as { items: unknown[] };
         expect(result.items, `${name} returns no foreign-family rows`).toEqual([]);
+        continue;
+      }
+      if (name === "getYearlyTrendFn") {
+        const result = (await endpoints.get(name)!({
+          data: { year: 2026, memberId: memberB.id },
+        })) as number[];
+        expect(result, `${name} returns no foreign-family rows`).toEqual(Array(12).fill(0));
         continue;
       }
       let error: unknown;

@@ -22,6 +22,10 @@ import { renameFamily, updateOwnDisplayName, updateProfileName } from "@/service
 import { profileSchema } from "@/lib/validations";
 import type { FamilyRole } from "@/types";
 import { createInvite, listPendingInvites, revokeInvite } from "@/services/invites";
+import { getAiSettings, setAiEnabled } from "@/services/ai";
+import { Switch } from "@/components/ui/switch";
+import { getIncomeProfile, setIncomeProfile } from "@/services/insights";
+import { fromPaise, toPaise } from "@/lib/money";
 
 export const Route = createFileRoute("/_authenticated/profile")({
   head: () => ({
@@ -47,8 +51,44 @@ function ProfilePage() {
   const [displayName, setDisplayName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"ADMIN" | "MEMBER" | "VIEWER">("MEMBER");
+  const [monthlyIncome, setMonthlyIncome] = useState("");
   const [newInviteLink, setNewInviteLink] = useState("");
   const canInvite = role === "OWNER" || role === "ADMIN";
+  const aiSettingsQuery = useQuery({
+    queryKey: ["ai-settings", family?.id],
+    queryFn: getAiSettings,
+    enabled: role === "OWNER" && Boolean(family?.id),
+  });
+  const aiToggle = useMutation({
+    mutationFn: setAiEnabled,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["ai-settings", family?.id] });
+      toast.success("AI setting updated");
+    },
+    onError: (cause: Error) => toast.error(cause.message),
+  });
+  const incomeQuery = useQuery({
+    queryKey: ["income-profile", family?.id],
+    queryFn: getIncomeProfile,
+    enabled: (role === "OWNER" || role === "ADMIN") && Boolean(family?.id),
+  });
+  useEffect(() => {
+    setMonthlyIncome(
+      incomeQuery.data ? String(fromPaise(incomeQuery.data.monthlyIncomePaise)) : "",
+    );
+  }, [incomeQuery.data]);
+  const saveIncome = useMutation({
+    mutationFn: () =>
+      setIncomeProfile(monthlyIncome.trim() ? toPaise(Number(monthlyIncome)) : null),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["income-profile", family?.id] }),
+        queryClient.invalidateQueries({ queryKey: ["insights", family?.id] }),
+      ]);
+      toast.success("Monthly income updated");
+    },
+    onError: (cause: Error) => toast.error(cause.message),
+  });
 
   useEffect(() => {
     setName(profile?.name ?? "");
@@ -236,6 +276,68 @@ function ProfilePage() {
           </Button>
         </CardContent>
       </Card>
+
+      {role === "OWNER" ? (
+        <Card className="shadow-soft">
+          <CardHeader>
+            <CardTitle className="text-base">AI features</CardTitle>
+            <CardDescription>
+              When enabled, the text or receipt image you submit for an AI feature is sent to
+              Anthropic for processing. FamilyBudget does not store prompts, generated responses,
+              receipt images, or raw SMS. Usage metadata is retained for cost controls.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <Label htmlFor="family-ai-enabled">Enable AI for this family</Label>
+              <p className="text-sm text-muted-foreground">
+                This month: {((aiSettingsQuery.data?.usedMicros ?? 0) / 1_000_000).toFixed(2)} USD
+                of {((aiSettingsQuery.data?.capMicros ?? 0) / 1_000_000).toFixed(2)} USD
+              </p>
+            </div>
+            <Switch
+              id="family-ai-enabled"
+              checked={aiSettingsQuery.data?.enabled ?? false}
+              disabled={aiSettingsQuery.isLoading || aiToggle.isPending}
+              onCheckedChange={(checked) => aiToggle.mutate(checked)}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {role === "OWNER" || role === "ADMIN" ? (
+        <Card className="shadow-soft">
+          <CardHeader>
+            <CardTitle className="text-base">Optional income profile</CardTitle>
+            <CardDescription>
+              Used only to calculate shared-family savings and financial-health insights. Leave
+              blank if you do not want to include income.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="monthly-family-income">Monthly household income (₹)</Label>
+              <Input
+                id="monthly-family-income"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={monthlyIncome}
+                onChange={(event) => setMonthlyIncome(event.target.value)}
+              />
+            </div>
+            <Button
+              variant="outline"
+              disabled={
+                saveIncome.isPending || Boolean(monthlyIncome && Number(monthlyIncome) <= 0)
+              }
+              onClick={() => saveIncome.mutate()}
+            >
+              {monthlyIncome ? "Save income profile" : "Remove income profile"}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {canInvite ? (
         <Card className="shadow-soft">
