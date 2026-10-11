@@ -1,0 +1,10 @@
+{
+  "name": "FamilyBudget",
+  "short_name": "FamilyBudget",
+  "description": "Shared family budgeting and expense tracking",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f766e",
+  "icons": [{ "src": "/icons/familybudget.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Sparkles, Upload } from "lucide-react";
+import { Mic, Sparkles, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -52,6 +52,22 @@ interface SmartDraft {
   duplicate: boolean;
 }
 
+interface SpeechResultEvent {
+  results: ArrayLike<ArrayLike<{ transcript: string }>>;
+}
+
+interface SpeechRecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  onresult: ((event: SpeechResultEvent) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
 function currencyInput(paise: number) {
   return (paise / 100).toFixed(2).replace(/\.00$/, "");
 }
@@ -66,6 +82,8 @@ export function SmartAddDialog() {
   const [drafts, setDrafts] = useState<SmartDraft[]>([]);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
+  const [speechLanguage, setSpeechLanguage] = useState("en-IN");
+  const [listening, setListening] = useState(false);
   const [receiptPreview, setReceiptPreview] = useState("");
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const requestVersion = useRef(0);
@@ -111,7 +129,7 @@ export function SmartAddDialog() {
   };
 
   const loadText = useMutation({
-    mutationFn: () => parseExpenseText(text),
+    mutationFn: (inputText: string) => parseExpenseText(inputText),
     onSuccess: (result) => {
       setDrafts(
         result.map((item, index) => ({
@@ -246,6 +264,40 @@ export function SmartAddDialog() {
     }
   };
 
+  const startVoiceEntry = () => {
+    const speechWindow = window as Window & {
+      SpeechRecognition?: SpeechRecognitionConstructor;
+      webkitSpeechRecognition?: SpeechRecognitionConstructor;
+    };
+    const Recognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+    if (!Recognition) {
+      toast.error("Voice entry is not supported in this browser. Type your expense instead.");
+      return;
+    }
+    const recognition = new Recognition();
+    recognition.lang = speechLanguage;
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map((result) => result[0]?.transcript ?? "")
+        .join(" ")
+        .trim();
+      if (transcript) {
+        setText(transcript);
+        setBusy(true);
+        setProgress("Turning your voice into a draft…");
+        loadText.mutate(transcript);
+      }
+    };
+    recognition.onerror = () => {
+      setListening(false);
+      toast.error("Voice recognition stopped. You can type the expense instead.");
+    };
+    recognition.onend = () => setListening(false);
+    recognition.start();
+    setListening(true);
+  };
+
   const saveOne = async (draft: SmartDraft) => {
     if (!draft.categoryId) throw new Error("Choose a category before saving");
     if (draft.duplicate) throw new Error("This transaction was already imported");
@@ -325,12 +377,37 @@ export function SmartAddDialog() {
                 placeholder="450 groceries yesterday"
                 onChange={(event) => setText(event.target.value)}
               />
+              <div className="flex flex-wrap items-center gap-2">
+                <Label htmlFor="voice-language">Voice language</Label>
+                <select
+                  id="voice-language"
+                  className="h-9 rounded-md border bg-background px-2 text-sm"
+                  value={speechLanguage}
+                  onChange={(event) => setSpeechLanguage(event.target.value)}
+                >
+                  <option value="en-IN">English (India)</option>
+                  <option value="hi-IN">Hindi</option>
+                  <option value="gu-IN">Gujarati</option>
+                </select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy || listening}
+                  onClick={startVoiceEntry}
+                >
+                  <Mic className="mr-1 h-4 w-4" />
+                  {listening ? "Listening…" : "Speak expense"}
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Recognition quality varies by browser and device.
+                </span>
+              </div>
               <Button
                 disabled={busy || loadText.isPending || !text.trim()}
                 onClick={() => {
                   setBusy(true);
                   setProgress("Preparing expense drafts…");
-                  loadText.mutate();
+                  loadText.mutate(text);
                 }}
               >
                 Create drafts

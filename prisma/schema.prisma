@@ -108,24 +108,40 @@ enum InsightVerdict {
   DISMISS
 }
 
+enum PurchaseStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  CONVERTED
+}
+
+enum NotificationType {
+  PURCHASE_REQUEST
+  PURCHASE_DECISION
+  BUDGET_ALERT
+  RECURRING_REMINDER
+  INSIGHT
+  FAMILY_UPDATE
+}
+
 model User {
-  id                String               @id @default(uuid())
-  name              String
-  email             String               @unique
-  passwordHash      String
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
-  families          Family[]             @relation("FamilyOwner")
-  memberships       FamilyMember[]
-  expenses          Expense[]
-  usedInvites       Invite[]
-  aiUsage           AiUsage[]
-  corrections       CategoryCorrection[]
-  dismissedInsights Insight[]            @relation("InsightDismissedBy")
-  insightFeedback   InsightFeedback[]
-  createdFunds      SinkingFund[]
-  createdGoals      Goal[]
-  fundContributions FundContribution[]
+  id                      String                   @id @default(uuid())
+  name                    String
+  email                   String                   @unique
+  passwordHash            String
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  families                Family[]                 @relation("FamilyOwner")
+  memberships             FamilyMember[]
+  expenses                Expense[]
+  usedInvites             Invite[]
+  aiUsage                 AiUsage[]
+  corrections             CategoryCorrection[]
+  dismissedInsights       Insight[]                @relation("InsightDismissedBy")
+  insightFeedback         InsightFeedback[]
+  notifications           Notification[]
+  notificationPreferences NotificationPreference[]
 }
 
 model Family {
@@ -152,6 +168,9 @@ model Family {
   sinkingFunds       SinkingFund[]
   goals              Goal[]
   fundContributions  FundContribution[]
+  monthlyReports     MonthlyReport[]
+  purchaseRequests   PurchaseRequest[]
+  notifications      Notification[]
 
   @@index([ownerId])
 }
@@ -254,8 +273,6 @@ model SinkingFund {
   category          Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   createdByMember   FamilyMember?      @relation(fields: [createdByMemberId], references: [id], onDelete: SetNull)
   contributions     FundContribution[]
-  User              User?              @relation(fields: [userId], references: [id])
-  userId            String?
 
   @@index([familyId, archivedAt, dueDate])
 }
@@ -270,8 +287,6 @@ model FundContribution {
   family      Family        @relation(fields: [familyId], references: [id], onDelete: Cascade)
   fund        SinkingFund   @relation(fields: [fundId], references: [id], onDelete: Cascade)
   member      FamilyMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
-  User        User?         @relation(fields: [userId], references: [id])
-  userId      String?
 
   @@index([familyId, fundId, createdAt])
 }
@@ -287,10 +302,77 @@ model Goal {
   createdAt         DateTime      @default(now())
   family            Family        @relation(fields: [familyId], references: [id], onDelete: Cascade)
   createdByMember   FamilyMember? @relation(fields: [createdByMemberId], references: [id], onDelete: SetNull)
-  User              User?         @relation(fields: [userId], references: [id])
-  userId            String?
 
   @@index([familyId, archivedAt, targetDate])
+}
+
+model MonthlyReport {
+  id          String   @id @default(uuid())
+  familyId    String
+  month       Int
+  year        Int
+  data        Json
+  narrative   String?
+  generatedAt DateTime @default(now())
+  family      Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+
+  @@unique([familyId, month, year])
+  @@index([familyId, year, month])
+}
+
+model PurchaseRequest {
+  id                String         @id @default(uuid())
+  familyId          String
+  requesterMemberId String
+  title             String
+  amountPaise       Int
+  categoryId        String
+  note              String         @default("") @db.VarChar(500)
+  neededBy          DateTime?
+  status            PurchaseStatus @default(PENDING)
+  decidedByMemberId String?
+  decisionNote      String?        @db.VarChar(500)
+  decidedAt         DateTime?
+  impactSnapshot    Json
+  createdAt         DateTime       @default(now())
+  family            Family         @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  requester         FamilyMember   @relation("PurchaseRequester", fields: [requesterMemberId], references: [id], onDelete: Cascade)
+  decider           FamilyMember?  @relation("PurchaseDecider", fields: [decidedByMemberId], references: [id], onDelete: SetNull)
+  category          Category       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([familyId, status, createdAt])
+  @@index([requesterMemberId, status])
+}
+
+model Notification {
+  id         String           @id @default(uuid())
+  familyId   String
+  userId     String
+  type       NotificationType
+  title      String
+  body       String
+  entityType String?
+  entityId   String?
+  dedupeKey  String
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+  family     Family           @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, readAt, createdAt])
+  @@index([familyId, createdAt])
+}
+
+model NotificationPreference {
+  id     String           @id @default(uuid())
+  userId String
+  type   NotificationType
+  inApp  Boolean          @default(true)
+  push   Boolean          @default(false)
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
 }
 
 model FamilyMember {
@@ -313,6 +395,8 @@ model FamilyMember {
   createdFunds       SinkingFund[]
   createdGoals       Goal[]
   fundContributions  FundContribution[]
+  purchaseRequests   PurchaseRequest[]  @relation("PurchaseRequester")
+  decidedRequests    PurchaseRequest[]  @relation("PurchaseDecider")
 
   @@unique([familyId, userId])
   @@unique([userId])
@@ -354,6 +438,7 @@ model Category {
   expenses         Expense[]
   corrections      CategoryCorrection[]
   sinkingFunds     SinkingFund[]
+  purchaseRequests PurchaseRequest[]
 
   @@unique([familyId, name])
   @@index([familyId])
