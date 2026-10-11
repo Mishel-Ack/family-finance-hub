@@ -28,6 +28,8 @@ import { MemberFilter } from "@/components/common/MemberFilter";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { activitySearchSchema } from "@/lib/activity-queries";
 import { listFamilyMembers } from "@/services/family";
+import { SmartAddDialog } from "@/components/expenses/SmartAddDialog";
+import { InsightsPanel } from "@/components/dashboard/InsightsPanel";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   validateSearch: (search: Record<string, unknown>) =>
@@ -98,7 +100,7 @@ function DashboardPage() {
         title={`Hello, ${profile?.name?.split(" ")[0] ?? user?.name?.split(" ")[0] ?? "there"}`}
         description={`${MONTHS[month - 1]} ${year} · ${family?.name ?? "Your family"}`}
         actions={
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="hidden rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary sm:block">
               {profile?.email || user?.email}
             </div>
@@ -107,6 +109,7 @@ function DashboardPage() {
                 Add expense <ArrowRight className="ml-1 h-4 w-4" />
               </Link>
             </Button>
+            <SmartAddDialog />
           </div>
         }
       />
@@ -173,6 +176,8 @@ function DashboardPage() {
             />
           </div>
           <p className="text-sm text-muted-foreground">Family totals exclude private expenses.</p>
+
+          <InsightsPanel />
 
           <Card className="shadow-soft">
             <CardHeader>

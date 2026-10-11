@@ -33,6 +33,70 @@ Set `DATABASE_URL_TEST` to that database. The Vitest global setup refuses a URL 
 - Money is stored as integer paise. Inputs reject non-positive values and more than two decimal places; display values are formatted in Indian Rupees.
 - Categories are stored per family and can be created, renamed, recolored, and archived by OWNER and ADMIN members.
 
+### Request flow
+
+```mermaid
+flowchart LR
+  B[Browser] --> O[Origin and session checks]
+  O --> V[Zod input validation]
+  V --> A[Database membership and permission matrix]
+  A --> G[Family-scoped guards and expense visibility helpers]
+  G --> P[Prisma]
+  P --> D[(PostgreSQL)]
+  G --> R[Sanitized response and activity entry]
+  R --> B
+```
+
+An authenticated request resolves its account and current membership from PostgreSQL. Removing a member therefore revokes their family access on the next request, even while their signed session cookie remains valid for its normal lifetime.
+
+### Permission matrix
+
+The table lists every action in `src/lib/authz.ts`. Record-specific guards further restrict actions (for example, ADMIN cannot modify OWNER/ADMIN membership, and only the creator can change an expense's visibility).
+
+| Permission action          | OWNER | ADMIN | MEMBER | VIEWER |
+| -------------------------- | :---: | :---: | :----: | :----: |
+| `family:delete`            |   ✓   |   —   |   —    |   —    |
+| `family:rename`            |   ✓   |   ✓   |   —    |   —    |
+| `member:add`               |   ✓   |   ✓   |   —    |   —    |
+| `member:remove`            |   ✓   |   ✓   |   —    |   —    |
+| `member:changeRole`        |   ✓   |   —   |   —    |   —    |
+| `member:changeMemberRole`  |   ✓   |   ✓   |   —    |   —    |
+| `member:removeAdmin`       |   ✓   |   —   |   —    |   —    |
+| `member:removeOwner`       |   —   |   —   |   —    |   —    |
+| `member:changeAdminRole`   |   ✓   |   —   |   —    |   —    |
+| `member:changeOwnerRole`   |   —   |   —   |   —    |   —    |
+| `member:assignAdminRole`   |   ✓   |   —   |   —    |   —    |
+| `member:leave`             |   ✓   |   ✓   |   ✓    |   ✓    |
+| `member:updateDisplayName` |   ✓   |   ✓   |   ✓    |   ✓    |
+| `family:create`            |   ✓   |   ✓   |   ✓    |   ✓    |
+| `invite:create`            |   ✓   |   ✓   |   —    |   —    |
+| `invite:createAdmin`       |   ✓   |   —   |   —    |   —    |
+| `invite:list`              |   ✓   |   ✓   |   —    |   —    |
+| `invite:revoke`            |   ✓   |   ✓   |   —    |   —    |
+| `budget:manage`            |   ✓   |   ✓   |   —    |   —    |
+| `category:manage`          |   ✓   |   ✓   |   —    |   —    |
+| `expense:create`           |   ✓   |   ✓   |   ✓    |   —    |
+| `expense:editAny`          |   ✓   |   ✓   |   —    |   —    |
+| `expense:editOwn`          |   ✓   |   ✓   |   ✓    |   —    |
+| `expense:deleteAny`        |   ✓   |   ✓   |   —    |   —    |
+| `expense:deleteOwn`        |   ✓   |   ✓   |   ✓    |   —    |
+| `split:create`             |   ✓   |   ✓   |   ✓    |   —    |
+| `split:manageAny`          |   ✓   |   ✓   |   —    |   —    |
+| `settlement:create`        |   ✓   |   ✓   |   ✓    |   —    |
+| `settlement:manageAny`     |   ✓   |   ✓   |   —    |   —    |
+| `settlement:deleteOwn`     |   ✓   |   —   |   ✓    |   —    |
+| `settlement:deleteAny`     |   ✓   |   ✓   |   —    |   —    |
+| `activity:read`            |   ✓   |   ✓   |   ✓    |   ✓    |
+| `readAll`                  |   ✓   |   ✓   |   ✓    |   ✓    |
+
+### Privacy and invitations
+
+- Shared expense lists, dashboards, reports, budget usage, category totals, and balances use the shared-expense query helpers. A member can also see their own private expenses; other family members cannot.
+- Private expense details and identifiers are excluded from shared activity entries. The activity feed records shared expense events, budgets, categories, membership, invitations, splits, and settlements. It does not record private expense data.
+- Invite links contain a cryptographically random token. The database stores only its SHA-256 hash; links expire after seven days, can be revoked, and are accepted once. Raw invite tokens are returned only when a link is created.
+- Sessions are HMAC-signed, last seven days, and use the configured `SESSION_COOKIE_NAME` (default `fb_session`) with `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
+- Login is limited to five failed attempts per email-and-IP key in a 15-minute window. The limiter is in memory, resets on restart, and is not shared by multiple instances.
+
 ## Member management
 
 The Members page shows each household member's role, join date, and most recent expense activity. OWNER can assign ADMIN, MEMBER, or VIEWER; ADMIN can assign MEMBER or VIEWER and can only change/remove MEMBER or VIEWER accounts. No role-change action can create or modify an OWNER. An OWNER transfers ownership by typing the exact family name; the previous owner becomes ADMIN. Other members can leave, while an OWNER must transfer ownership first.
@@ -76,7 +140,34 @@ Equal splits use the **remainder rule**: divide the integer-paise amount evenly,
 
 Balances include only shared expenses that have an explicit split. Ordinary shared expenses without splits are household spending and do not create member debts. A settlement can be deleted by its creator within 24 hours, or by an OWNER/ADMIN at any time. A settlement above the current debt is accepted and creates an opposite balance.
 
-When a member leaves or is removed, the account is detached and its membership is retained as a former-member record while shared expense, split, and settlement history references it. The user loses access immediately; private expenses are deleted. A member with a non-zero balance must settle up first.
+When a member leaves or is removed, the account is detached and its membership is retained as a former-member record while shared expense, split, and settlement history references it. The user loses access immediately; private expenses are deleted. If a member who owes money cannot settle, an OWNER/ADMIN can record a settlement on their behalf to zero the balance, then remove them.
+
+## Demo seed
+
+Run `npm run seed:demo` against a local development database to create the deterministic Sharma Family demo household. The script refuses production and remote database targets by default. It creates four accounts (`demo-owner@example.com`, `demo-admin@example.com`, `demo-member@example.com`, and `demo-viewer@example.com`) with one shared password, printed only in non-production. The seed is idempotent; `npm run seed:demo -- --reset` deletes only the deterministic demo family and recreates its records.
+
+Remote demo seeding requires both `--force-remote` and `ALLOW_DEMO_SEED=true`; production is always refused. Never use demo accounts or seed data on a production database.
+
+## Environment variables
+
+| Variable              | Required           | Purpose                                                                                                             |
+| --------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`        | Yes                | PostgreSQL connection used by the app and migrations.                                                               |
+| `DATABASE_URL_TEST`   | Tests              | Separate PostgreSQL database for integration tests.                                                                 |
+| `JWT_SECRET`          | Yes                | HMAC signing key; at least 32 characters.                                                                           |
+| `APP_ORIGIN`          | Yes for production | Public origin used for CSRF checks and invite links; use HTTPS in production.                                       |
+| `NODE_ENV`            | Yes for production | Set to `production` for deployed service.                                                                           |
+| `SESSION_COOKIE_NAME` | No                 | Session cookie name; defaults to `fb_session`.                                                                      |
+| `ALLOW_DEMO_SEED`     | No                 | Must equal `true` together with `--force-remote` to seed a non-local database. Production seeding remains disabled. |
+
+## Database backups and known limitations
+
+- Back up PostgreSQL with `pg_dump` before schema changes or data imports. Restore into a separate database first, verify the restored app and health endpoint, then switch the service connection if needed. Keep the dump encrypted and access-controlled.
+- Login rate limits are in-memory, reset when the process restarts, and do not coordinate across instances; use Redis for multi-instance deployments.
+- Live updates use polling rather than websockets.
+- An account can belong to only one family at a time.
+- Legacy expense rows without a former-member display-name snapshot cannot recover that historical name automatically.
+- Splits and settlement history are preserved for former members; a member with a balance must settle it before leaving or removal.
 
 ## Data migration note
 

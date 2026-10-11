@@ -64,54 +64,255 @@ enum ActivityEntityType {
   SETTLEMENT
 }
 
+enum AiUsageFeature {
+  CATEGORIZATION
+  EXPENSE_TEXT
+  RECEIPT
+  BANK_MESSAGES
+  COACH
+  SCENARIO_EXPLANATION
+  REPORT_NARRATIVE
+}
+
+enum AiUsageOutcome {
+  OK
+  INVALID_OUTPUT
+  ERROR
+  BLOCKED
+}
+
+enum CorrectionScope {
+  SHARED
+  PRIVATE
+}
+
+enum InsightType {
+  MID_MONTH_OVERSPEND
+  CATEGORY_ANOMALY
+  DUPLICATE_CHARGE
+  RECURRING_BILL
+  PRICE_INCREASE
+  FORECAST
+  FINANCIAL_HEALTH
+}
+
+enum InsightSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum InsightVerdict {
+  USEFUL
+  NOT_USEFUL
+  DISMISS
+}
+
 model User {
-  id           String         @id @default(uuid())
-  name         String
-  email        String         @unique
-  passwordHash String
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  families     Family[]       @relation("FamilyOwner")
-  memberships  FamilyMember[]
-  expenses     Expense[]
-  usedInvites  Invite[]
+  id                String               @id @default(uuid())
+  name              String
+  email             String               @unique
+  passwordHash      String
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  families          Family[]             @relation("FamilyOwner")
+  memberships       FamilyMember[]
+  expenses          Expense[]
+  usedInvites       Invite[]
+  aiUsage           AiUsage[]
+  corrections       CategoryCorrection[]
+  dismissedInsights Insight[]            @relation("InsightDismissedBy")
+  insightFeedback   InsightFeedback[]
+  createdFunds      SinkingFund[]
+  createdGoals      Goal[]
+  fundContributions FundContribution[]
 }
 
 model Family {
-  id          String         @id @default(uuid())
-  name        String
-  ownerId     String
-  owner       User           @relation("FamilyOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  members     FamilyMember[]
-  categories  Category[]
-  budgets     Budget[]
-  expenses    Expense[]
-  invites     Invite[]
-  activity    ActivityLog[]
-  settlements Settlement[]
+  id                 String               @id @default(uuid())
+  name               String
+  ownerId            String
+  owner              User                 @relation("FamilyOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  members            FamilyMember[]
+  categories         Category[]
+  budgets            Budget[]
+  expenses           Expense[]
+  invites            Invite[]
+  activity           ActivityLog[]
+  settlements        Settlement[]
+  aiEnabled          Boolean              @default(false)
+  aiMonthlyCapMicros Int                  @default(5000000)
+  aiUsage            AiUsage[]
+  corrections        CategoryCorrection[]
+  importFingerprints ImportFingerprint[]
+  insights           Insight[]
+  incomeProfile      IncomeProfile?
+  sinkingFunds       SinkingFund[]
+  goals              Goal[]
+  fundContributions  FundContribution[]
 
   @@index([ownerId])
 }
 
+model AiUsage {
+  id                  String         @id @default(uuid())
+  familyId            String
+  family              Family         @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  userId              String
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feature             AiUsageFeature
+  model               String
+  inputTokens         Int
+  outputTokens        Int
+  estimatedCostMicros Int
+  latencyMs           Int
+  outcome             AiUsageOutcome
+  createdAt           DateTime       @default(now())
+
+  @@index([familyId, createdAt])
+}
+
+model CategoryCorrection {
+  id          String          @id @default(uuid())
+  familyId    String
+  userId      String
+  merchantKey String
+  categoryId  String
+  scope       CorrectionScope
+  createdAt   DateTime        @default(now())
+  family      Family          @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category    Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@unique([familyId, userId, merchantKey, scope])
+  @@index([familyId, merchantKey, scope])
+}
+
+model ImportFingerprint {
+  id        String   @id @default(uuid())
+  familyId  String
+  hash      String
+  createdAt DateTime @default(now())
+  family    Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+
+  @@unique([familyId, hash])
+  @@index([familyId, createdAt])
+}
+
+model Insight {
+  id                String            @id @default(uuid())
+  familyId          String
+  type              InsightType
+  key               String
+  payload           Json
+  severity          InsightSeverity
+  computedAt        DateTime          @default(now())
+  dismissedAt       DateTime?
+  dismissedByUserId String?
+  family            Family            @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  dismissedBy       User?             @relation("InsightDismissedBy", fields: [dismissedByUserId], references: [id], onDelete: SetNull)
+  feedback          InsightFeedback[]
+
+  @@unique([familyId, type, key])
+  @@index([familyId, dismissedAt, computedAt])
+}
+
+model IncomeProfile {
+  id                 String   @id @default(uuid())
+  familyId           String   @unique
+  monthlyIncomePaise Int
+  updatedAt          DateTime @updatedAt
+  family             Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+}
+
+model InsightFeedback {
+  id        String         @id @default(uuid())
+  insightId String
+  userId    String
+  verdict   InsightVerdict
+  createdAt DateTime       @default(now())
+  insight   Insight        @relation(fields: [insightId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([insightId, userId])
+  @@index([userId, createdAt])
+}
+
+model SinkingFund {
+  id                String             @id @default(uuid())
+  familyId          String
+  name              String
+  targetPaise       Int
+  dueDate           DateTime
+  categoryId        String?
+  createdByMemberId String?
+  archivedAt        DateTime?
+  createdAt         DateTime           @default(now())
+  family            Family             @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  category          Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdByMember   FamilyMember?      @relation(fields: [createdByMemberId], references: [id], onDelete: SetNull)
+  contributions     FundContribution[]
+  User              User?              @relation(fields: [userId], references: [id])
+  userId            String?
+
+  @@index([familyId, archivedAt, dueDate])
+}
+
+model FundContribution {
+  id          String        @id @default(uuid())
+  familyId    String
+  fundId      String
+  memberId    String?
+  amountPaise Int
+  createdAt   DateTime      @default(now())
+  family      Family        @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  fund        SinkingFund   @relation(fields: [fundId], references: [id], onDelete: Cascade)
+  member      FamilyMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  User        User?         @relation(fields: [userId], references: [id])
+  userId      String?
+
+  @@index([familyId, fundId, createdAt])
+}
+
+model Goal {
+  id                String        @id @default(uuid())
+  familyId          String
+  name              String
+  targetPaise       Int
+  targetDate        DateTime
+  createdByMemberId String?
+  archivedAt        DateTime?
+  createdAt         DateTime      @default(now())
+  family            Family        @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  createdByMember   FamilyMember? @relation(fields: [createdByMemberId], references: [id], onDelete: SetNull)
+  User              User?         @relation(fields: [userId], references: [id])
+  userId            String?
+
+  @@index([familyId, archivedAt, targetDate])
+}
+
 model FamilyMember {
-  id                 String         @id @default(uuid())
+  id                 String             @id @default(uuid())
   familyId           String
-  family             Family         @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  family             Family             @relation(fields: [familyId], references: [id], onDelete: Cascade)
   userId             String?
-  user               User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  displayName        String         @default("")
-  role               Role           @default(MEMBER)
-  createdAt          DateTime       @default(now())
+  user               User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName        String             @default("")
+  role               Role               @default(MEMBER)
+  createdAt          DateTime           @default(now())
   expenses           Expense[]
   createdInvites     Invite[]
   activities         ActivityLog[]
   formerAt           DateTime?
   expenseSplits      ExpenseSplit[]
-  settlementsFrom    Settlement[]   @relation("SettlementFrom")
-  settlementsTo      Settlement[]   @relation("SettlementTo")
-  settlementsCreated Settlement[]   @relation("SettlementCreator")
+  settlementsFrom    Settlement[]       @relation("SettlementFrom")
+  settlementsTo      Settlement[]       @relation("SettlementTo")
+  settlementsCreated Settlement[]       @relation("SettlementCreator")
+  createdFunds       SinkingFund[]
+  createdGoals       Goal[]
+  fundContributions  FundContribution[]
 
   @@unique([familyId, userId])
   @@unique([userId])
@@ -139,18 +340,20 @@ model Invite {
 }
 
 model Category {
-  id               String           @id @default(uuid())
+  id               String               @id @default(uuid())
   familyId         String
-  family           Family           @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  family           Family               @relation(fields: [familyId], references: [id], onDelete: Cascade)
   name             String
-  color            String           @default("#6b7280")
-  icon             String           @default("Tag")
-  isDefault        Boolean          @default(false)
+  color            String               @default("#6b7280")
+  icon             String               @default("Tag")
+  isDefault        Boolean              @default(false)
   archivedAt       DateTime?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
   budgetCategories BudgetCategory[]
   expenses         Expense[]
+  corrections      CategoryCorrection[]
+  sinkingFunds     SinkingFund[]
 
   @@unique([familyId, name])
   @@index([familyId])

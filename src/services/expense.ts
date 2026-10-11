@@ -22,6 +22,8 @@ import {
 } from "@/lib/expense-queries";
 import { recordActivity, redactExpenseActivity } from "@/lib/activity-queries";
 import { computeEqualSplit, computeExactSplit, computePercentSplit } from "@/lib/splits";
+import { claimImportFingerprint } from "@/lib/import-fingerprint-queries";
+import { queueInsightRecompute } from "@/services/insights";
 import type { z } from "zod";
 import type { splitInputSchema } from "@/lib/validations";
 
@@ -248,6 +250,10 @@ export const createExpenseFn = createServerFn({ method: "POST" })
     ]);
 
     await serializableExpense(async (tx) => {
+      if (data.importFingerprint) {
+        const claimed = await claimImportFingerprint(tx, auth.familyId, data.importFingerprint);
+        if (!claimed) throw httpError("This bank transaction was already imported", 409);
+      }
       const category = await tx.category.findFirst({
         where: { id: data.categoryId, familyId: auth.familyId },
         select: { name: true },
@@ -281,6 +287,7 @@ export const createExpenseFn = createServerFn({ method: "POST" })
         throw httpError("Private expenses cannot have splits", 400);
       }
     });
+    if (data.visibility === "SHARED") queueInsightRecompute(auth.familyId);
   });
 
 export const updateExpenseFn = createServerFn({ method: "POST" })
@@ -372,6 +379,9 @@ export const updateExpenseFn = createServerFn({ method: "POST" })
         });
       }
     });
+    if (current.visibility === "SHARED" || data.input.visibility === "SHARED") {
+      queueInsightRecompute(auth.familyId);
+    }
   });
 
 export const deleteExpenseFn = createServerFn({ method: "POST" })
@@ -383,9 +393,11 @@ export const deleteExpenseFn = createServerFn({ method: "POST" })
       throw httpError("You cannot delete expenses", 403);
     }
 
+    let wasShared = false;
     await prisma.$transaction(async (tx) => {
       const expense = await findListableExpense(tx, auth, id);
       if (!expense) throw notFound("Expense not found");
+      wasShared = expense.visibility === "SHARED";
       const result = await tx.expense.deleteMany({
         where: {
           AND: [
@@ -415,6 +427,7 @@ export const deleteExpenseFn = createServerFn({ method: "POST" })
         await redactExpenseActivity(tx, auth.familyId, id);
       }
     });
+    if (wasShared) queueInsightRecompute(auth.familyId);
   });
 
 // Client helper wrappers

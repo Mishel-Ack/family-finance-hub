@@ -1,0 +1,25 @@
+CREATE TYPE "AiUsageFeature" AS ENUM ('CATEGORIZATION', 'EXPENSE_TEXT', 'RECEIPT', 'BANK_MESSAGES', 'COACH', 'SCENARIO_EXPLANATION', 'REPORT_NARRATIVE');
+CREATE TYPE "AiUsageOutcome" AS ENUM ('OK', 'INVALID_OUTPUT', 'ERROR', 'BLOCKED');
+
+ALTER TABLE "Family"
+  ADD COLUMN "aiEnabled" BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN "aiMonthlyCapMicros" INTEGER NOT NULL DEFAULT 5000000;
+
+CREATE TABLE "AiUsage" (
+  "id" TEXT NOT NULL,
+  "familyId" TEXT NOT NULL,
+  "userId" TEXT NOT NULL,
+  "feature" "AiUsageFeature" NOT NULL,
+  "model" TEXT NOT NULL,
+  "inputTokens" INTEGER NOT NULL,
+  "outputTokens" INTEGER NOT NULL,
+  "estimatedCostMicros" INTEGER NOT NULL,
+  "latencyMs" INTEGER NOT NULL,
+  "outcome" "AiUsageOutcome" NOT NULL,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "AiUsage_pkey" PRIMARY KEY ("id")
+);
+
+CREATE INDEX "AiUsage_familyId_createdAt_idx" ON "AiUsage"("familyId", "createdAt");
+ALTER TABLE "AiUsage" ADD CONSTRAINT "AiUsage_familyId_fkey" FOREIGN KEY ("familyId") REFERENCES "Family"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "AiUsage" ADD CONSTRAINT "AiUsage_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

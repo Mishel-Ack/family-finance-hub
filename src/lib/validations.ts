@@ -95,6 +95,10 @@ export const expenseSchema = z.object({
   description: z.string().trim().max(200).optional().default(""),
   visibility: z.enum(["SHARED", "PRIVATE"]).optional().default("SHARED"),
   split: splitInputSchema.nullable().optional(),
+  importFingerprint: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/i)
+    .optional(),
 });
 export const expenseListQuerySchema = z
   .object({
