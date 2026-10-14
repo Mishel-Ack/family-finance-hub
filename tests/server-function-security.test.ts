@@ -173,6 +173,10 @@ const validInputs: Record<string, unknown> = {
   deleteBudgetCategoryFn: "00000000-0000-4000-8000-000000000001",
   createInviteFn: { role: "MEMBER", email: "test@example.com" },
   revokeInviteFn: "00000000-0000-4000-8000-000000000001",
+  listCoachConversationsFn: undefined,
+  getCoachConversationFn: "00000000-0000-4000-8000-000000000001",
+  deleteCoachConversationFn: "00000000-0000-4000-8000-000000000001",
+  askCoachFn: { message: "What is my spend?" },
 };
 
 const intentionallyPublic = new Set([
@@ -368,6 +372,13 @@ describe("server-function security coverage", () => {
         dedupeKey: `security-${suffix}`,
       },
     });
+    const conversationB = await prisma.coachConversation.create({
+      data: {
+        familyId: familyB.id,
+        userId: ownerB.id,
+        title: "Foreign conversation",
+      },
+    });
 
     setAuthResolverForTests(async () => ({
       userId: ownerA.id,
@@ -414,6 +425,9 @@ describe("server-function security coverage", () => {
       decidePurchaseRequestFn: { id: requestB.id, status: "APPROVED" },
       cancelPurchaseRequestFn: requestB.id,
       markNotificationReadFn: notificationB.id,
+      getCoachConversationFn: conversationB.id,
+      deleteCoachConversationFn: conversationB.id,
+      askCoachFn: { conversationId: conversationB.id, message: "What is my spend?" },
     };
     // The registry is deliberately exhaustive: a new ID-accepting endpoint must add a case here.
     const idEndpoints = [
@@ -443,6 +457,9 @@ describe("server-function security coverage", () => {
       "getMonthlySummaryFn",
       "getYearlyTrendFn",
       "listActivityFn",
+      "getCoachConversationFn",
+      "deleteCoachConversationFn",
+      "askCoachFn",
     ];
     // Explicit exception registry: these functions accept no family-scoped record IDs.
     // Auth and invite entry points accept credentials, while create and report inputs carry values.
@@ -491,6 +508,7 @@ describe("server-function security coverage", () => {
       "generateFamilyStoryFn",
       "getInviteDetailsFn",
       "acceptInviteFn",
+      "listCoachConversationsFn",
     ];
     expect([...idEndpoints, ...nonIdEndpoints].sort()).toEqual([...declarations.keys()].sort());
     for (const name of idEndpoints) {

@@ -52,7 +52,9 @@ async function smokeTest() {
     process.exit(0);
   } catch (error) {
     clearTimeout(timeout);
-    console.error(`ai:smoke: request failed — ${error instanceof Error ? error.message : "unknown error"}`);
+    console.error(
+      `ai:smoke: request failed — ${error instanceof Error ? error.message : "unknown error"}`,
+    );
     process.exit(1);
   }
 }

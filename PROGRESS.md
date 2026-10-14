@@ -7,12 +7,12 @@
 
 ### Baseline Quality Gate
 
-| Check | Result |
-|-------|--------|
-| `tsc --noEmit` | ✅ PASS (0 errors) |
-| `npm run lint` | ✅ PASS (0 warnings) |
-| `npm test` | ⏳ RUNNING (DB reachable at localhost:5432) |
-| `npm run build` | ⏳ NOT YET RUN |
+| Check           | Result                                      |
+| --------------- | ------------------------------------------- |
+| `tsc --noEmit`  | ✅ PASS (0 errors)                          |
+| `npm run lint`  | ✅ PASS (0 warnings)                        |
+| `npm test`      | ⏳ RUNNING (DB reachable at localhost:5432) |
+| `npm run build` | ⏳ NOT YET RUN                              |
 
 Baseline test results will be filled in once the run completes.
 
@@ -117,6 +117,6 @@ Baseline test results will be filled in once the run completes.
 
 ## Step Completion Log
 
-| Step | Date | Files Changed | Migrations | Tests | Notes |
-|------|------|---------------|------------|-------|-------|
-| Baseline | 2026-10-14 | — | — | Pending | |
+| Step     | Date       | Files Changed | Migrations | Tests   | Notes |
+| -------- | ---------- | ------------- | ---------- | ------- | ----- |
+| Baseline | 2026-10-14 | —             | —          | Pending |       |

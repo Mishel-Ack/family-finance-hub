@@ -420,3 +420,19 @@ export function giveInsightFeedback(
 export function setIncomeProfile(amountPaise: number | null) {
   return setIncomeProfileFn({ data: amountPaise });
 }
+
+export async function getInsightsForCoach(familyId: string) {
+  return prisma.insight.findMany({
+    where: { familyId, dismissedAt: null },
+    orderBy: { computedAt: "desc" },
+    take: 5,
+    select: { type: true, severity: true, payload: true },
+  });
+}
+
+export async function getIncomeForCoach(familyId: string) {
+  return prisma.incomeProfile.findFirst({
+    where: { familyId },
+    select: { monthlyIncomePaise: true },
+  });
+}

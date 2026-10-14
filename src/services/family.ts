@@ -23,6 +23,7 @@ import {
 } from "@/lib/expense-queries";
 import { recordActivity } from "@/lib/activity-queries";
 import { assertMemberSettled } from "@/services/balances";
+import { deleteUserCoachConversations } from "@/services/coach";
 
 export const getProfileFn = createServerFn({ method: "GET" }).handler(async () => {
   const auth = await requireMember("readAll");
@@ -144,6 +145,9 @@ export const removeFamilyMemberFn = createServerFn({ method: "POST" })
         await tx.expense.deleteMany({
           where: privateExpensesForMemberWhere(auth.familyId, target.id),
         });
+        if (target.userId) {
+          await deleteUserCoachConversations(tx, auth.familyId, target.userId);
+        }
         await tx.expense.updateMany({
           where: sharedExpensesWhere(auth.familyId, { memberId: target.id }),
           data: { memberNameSnapshot: target.displayName, memberIdSnapshot: target.id },
@@ -226,6 +230,7 @@ export const leaveFamilyFn = createServerFn({ method: "POST" })
         await tx.expense.deleteMany({
           where: privateExpensesForMemberWhere(auth.familyId, member.id),
         });
+        await deleteUserCoachConversations(tx, auth.familyId, auth.userId);
         await tx.expense.updateMany({
           where: sharedExpensesWhere(auth.familyId, { memberId: member.id }),
           data: { memberNameSnapshot: member.displayName, memberIdSnapshot: member.id },

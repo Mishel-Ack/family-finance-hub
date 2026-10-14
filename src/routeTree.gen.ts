@@ -16,6 +16,7 @@ import { Route as AuthenticatedActivityRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedApprovalsRouteImport } from './routes/_authenticated/approvals'
 import { Route as AuthenticatedBalancesRouteImport } from './routes/_authenticated/balances'
 import { Route as AuthenticatedBudgetsRouteImport } from './routes/_authenticated/budgets'
+import { Route as AuthenticatedCoachRouteImport } from './routes/_authenticated/coach'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedExpensesRouteImport } from './routes/_authenticated/expenses'
 import { Route as AuthenticatedMembersRouteImport } from './routes/_authenticated/members'
@@ -58,6 +59,11 @@ const AuthenticatedBalancesRoute = AuthenticatedBalancesRouteImport.update({
 const AuthenticatedBudgetsRoute = AuthenticatedBudgetsRouteImport.update({
   id: '/budgets',
   path: '/budgets',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedCoachRoute = AuthenticatedCoachRouteImport.update({
+  id: '/coach',
+  path: '/coach',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
@@ -113,6 +119,7 @@ export interface FileRoutesByFullPath {
   '/approvals': typeof AuthenticatedApprovalsRoute
   '/balances': typeof AuthenticatedBalancesRoute
   '/budgets': typeof AuthenticatedBudgetsRoute
+  '/coach': typeof AuthenticatedCoachRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/expenses': typeof AuthenticatedExpensesRoute
   '/members': typeof AuthenticatedMembersRoute
@@ -130,6 +137,7 @@ export interface FileRoutesByTo {
   '/approvals': typeof AuthenticatedApprovalsRoute
   '/balances': typeof AuthenticatedBalancesRoute
   '/budgets': typeof AuthenticatedBudgetsRoute
+  '/coach': typeof AuthenticatedCoachRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/expenses': typeof AuthenticatedExpensesRoute
   '/members': typeof AuthenticatedMembersRoute
@@ -149,6 +157,7 @@ export interface FileRoutesById {
   '/_authenticated/approvals': typeof AuthenticatedApprovalsRoute
   '/_authenticated/balances': typeof AuthenticatedBalancesRoute
   '/_authenticated/budgets': typeof AuthenticatedBudgetsRoute
+  '/_authenticated/coach': typeof AuthenticatedCoachRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/expenses': typeof AuthenticatedExpensesRoute
   '/_authenticated/members': typeof AuthenticatedMembersRoute
@@ -168,6 +177,7 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/balances'
     | '/budgets'
+    | '/coach'
     | '/dashboard'
     | '/expenses'
     | '/members'
@@ -185,6 +195,7 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/balances'
     | '/budgets'
+    | '/coach'
     | '/dashboard'
     | '/expenses'
     | '/members'
@@ -203,6 +214,7 @@ export interface FileRouteTypes {
     | '/_authenticated/approvals'
     | '/_authenticated/balances'
     | '/_authenticated/budgets'
+    | '/_authenticated/coach'
     | '/_authenticated/dashboard'
     | '/_authenticated/expenses'
     | '/_authenticated/members'
@@ -271,6 +283,13 @@ declare module '@tanstack/react-router' {
       path: '/budgets'
       fullPath: '/budgets'
       preLoaderRoute: typeof AuthenticatedBudgetsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/coach': {
+      id: '/_authenticated/coach'
+      path: '/coach'
+      fullPath: '/coach'
+      preLoaderRoute: typeof AuthenticatedCoachRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/dashboard': {
@@ -344,6 +363,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedApprovalsRoute: typeof AuthenticatedApprovalsRoute
   AuthenticatedBalancesRoute: typeof AuthenticatedBalancesRoute
   AuthenticatedBudgetsRoute: typeof AuthenticatedBudgetsRoute
+  AuthenticatedCoachRoute: typeof AuthenticatedCoachRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedExpensesRoute: typeof AuthenticatedExpensesRoute
   AuthenticatedMembersRoute: typeof AuthenticatedMembersRoute
@@ -358,6 +378,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedApprovalsRoute: AuthenticatedApprovalsRoute,
   AuthenticatedBalancesRoute: AuthenticatedBalancesRoute,
   AuthenticatedBudgetsRoute: AuthenticatedBudgetsRoute,
+  AuthenticatedCoachRoute: AuthenticatedCoachRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedExpensesRoute: AuthenticatedExpensesRoute,
   AuthenticatedMembersRoute: AuthenticatedMembersRoute,

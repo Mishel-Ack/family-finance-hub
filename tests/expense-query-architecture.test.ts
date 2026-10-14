@@ -23,6 +23,8 @@ const purchaseRequestQueryPattern =
   /\.purchaseRequest\.(?:findMany|findFirst|findUnique|findUniqueOrThrow|count|groupBy|aggregate|create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/g;
 const notificationQueryPattern =
   /\.(?:notification|notificationPreference)\.(?:findMany|findFirst|findUnique|findUniqueOrThrow|count|groupBy|aggregate|create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/g;
+const coachQueryPattern =
+  /\.(?:coachConversation|coachMessage)\.(?:findMany|findFirst|findUnique|findUniqueOrThrow|count|groupBy|aggregate|create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/g;
 
 function typescriptFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -174,6 +176,20 @@ describe("expense query choke point", () => {
       .flatMap((path) => {
         const contents = readFileSync(path, "utf8");
         return [...contents.matchAll(notificationQueryPattern)].map(
+          (match) =>
+            `${relative(srcRoot, path)}:${contents.slice(0, match.index).split("\n").length}`,
+        );
+      });
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps coach conversation and message access in coach service or family cleanup", () => {
+    const allowed = ["services/coach.ts", "services/family.ts"];
+    const offenders = typescriptFiles(srcRoot)
+      .filter((path) => !allowed.includes(relative(srcRoot, path).replaceAll("\\", "/")))
+      .flatMap((path) => {
+        const contents = readFileSync(path, "utf8");
+        return [...contents.matchAll(coachQueryPattern)].map(
           (match) =>
             `${relative(srcRoot, path)}:${contents.slice(0, match.index).split("\n").length}`,
         );

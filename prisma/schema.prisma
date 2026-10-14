@@ -51,6 +51,9 @@ enum ActivityType {
   SPLIT_REMOVED
   SETTLEMENT_RECORDED
   SETTLEMENT_DELETED
+  EXPORT_PERFORMED
+  SCENARIO_CREATED
+  SCENARIO_DELETED
 }
 
 enum ActivityEntityType {
@@ -62,6 +65,7 @@ enum ActivityEntityType {
   INVITE
   SPLIT
   SETTLEMENT
+  SCENARIO
 }
 
 enum AiUsageFeature {
@@ -123,6 +127,16 @@ enum NotificationType {
   RECURRING_REMINDER
   INSIGHT
   FAMILY_UPDATE
+  MONTHLY_STORY_READY
+  FUND_OFF_TRACK
+  ANOMALY
+  MEMBER_JOINED
+  SETTLEMENT
+}
+
+enum CoachMessageRole {
+  USER
+  ASSISTANT
 }
 
 model User {
@@ -142,6 +156,7 @@ model User {
   insightFeedback         InsightFeedback[]
   notifications           Notification[]
   notificationPreferences NotificationPreference[]
+  coachConversations      CoachConversation[]
 }
 
 model Family {
@@ -171,6 +186,9 @@ model Family {
   monthlyReports     MonthlyReport[]
   purchaseRequests   PurchaseRequest[]
   notifications      Notification[]
+  coachConversations CoachConversation[]
+  scenarios          Scenario[]
+  recurringPatterns  RecurringPatternRecord[]
 
   @@index([ownerId])
 }
@@ -397,6 +415,7 @@ model FamilyMember {
   fundContributions  FundContribution[]
   purchaseRequests   PurchaseRequest[]  @relation("PurchaseRequester")
   decidedRequests    PurchaseRequest[]  @relation("PurchaseDecider")
+  createdScenarios   Scenario[]
 
   @@unique([familyId, userId])
   @@unique([userId])
@@ -492,8 +511,10 @@ model Expense {
   description        String            @default("")
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
+  clientRequestId    String?
   splits             ExpenseSplit[]
 
+  @@unique([familyId, userId, clientRequestId])
   @@index([familyId, date])
   @@index([familyId, categoryId])
   @@index([familyId, memberId, date])
@@ -549,4 +570,68 @@ model ActivityLog {
 
   @@index([familyId, createdAt, id])
   @@index([familyId, entityType, entityId])
+}
+
+model CoachConversation {
+  id        String         @id @default(uuid())
+  familyId  String
+  family    Family         @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String         @default("New conversation")
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  messages  CoachMessage[]
+
+  @@index([familyId, userId, createdAt])
+}
+
+model CoachMessage {
+  id             String            @id @default(uuid())
+  conversationId String
+  conversation   CoachConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           CoachMessageRole
+  content        String
+  sources        Json              @default("[]")
+  createdAt      DateTime          @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model Scenario {
+  id                String        @id @default(uuid())
+  familyId          String
+  family            Family        @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  createdByMemberId String?
+  createdByMember   FamilyMember? @relation(fields: [createdByMemberId], references: [id], onDelete: SetNull)
+  nameSnapshot      String        @default("")
+  name              String
+  definition        Json
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@unique([familyId, name])
+  @@index([familyId])
+}
+
+model RecurringPatternRecord {
+  id          String   @id @default(uuid())
+  familyId    String
+  family      Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  merchantKey String
+  status      String   @default("CONFIRMED")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([familyId, merchantKey])
+  @@index([familyId])
+}
+
+model RateLimitBucket {
+  key       String   @id
+  count     Int      @default(1)
+  resetAt   DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([resetAt])
 }

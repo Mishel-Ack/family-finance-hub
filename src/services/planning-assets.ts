@@ -148,3 +148,20 @@ export function createGoal(input: z.infer<typeof createGoalSchema>) {
 export function contributeToFund(input: z.infer<typeof contributionSchema>) {
   return contributeToFundFn({ data: input });
 }
+
+export async function getPlanningAssetsForCoach(familyId: string) {
+  const [funds, goals] = await Promise.all([
+    prisma.sinkingFund.findMany({
+      where: { familyId, archivedAt: null },
+      include: {
+        contributions: { where: { familyId }, select: { amountPaise: true } },
+      },
+      orderBy: { dueDate: "asc" },
+    }),
+    prisma.goal.findMany({
+      where: { familyId, archivedAt: null },
+      orderBy: { targetDate: "asc" },
+    }),
+  ]);
+  return { funds, goals };
+}
