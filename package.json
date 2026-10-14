@@ -10,6 +10,8 @@
     "start": "node .output/server/index.mjs",
     "seed:demo": "node scripts/seed-demo-runner.mjs",
     "insights:recompute": "node scripts/insights-runner.mjs",
+    "notifications:run": "node scripts/notifications-runner.mjs",
+    "ai:smoke": "node scripts/ai-smoke.mjs",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",

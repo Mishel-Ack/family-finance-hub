@@ -158,15 +158,38 @@ Remote demo seeding requires both `--force-remote` and `ALLOW_DEMO_SEED=true`; p
 
 ## Environment variables
 
-| Variable              | Required           | Purpose                                                                                                             |
-| --------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`        | Yes                | PostgreSQL connection used by the app and migrations.                                                               |
-| `DATABASE_URL_TEST`   | Tests              | Separate PostgreSQL database for integration tests.                                                                 |
-| `JWT_SECRET`          | Yes                | HMAC signing key; at least 32 characters.                                                                           |
-| `APP_ORIGIN`          | Yes for production | Public origin used for CSRF checks and invite links; use HTTPS in production.                                       |
-| `NODE_ENV`            | Yes for production | Set to `production` for deployed service.                                                                           |
-| `SESSION_COOKIE_NAME` | No                 | Session cookie name; defaults to `fb_session`.                                                                      |
-| `ALLOW_DEMO_SEED`     | No                 | Must equal `true` together with `--force-remote` to seed a non-local database. Production seeding remains disabled. |
+| Variable                  | Required           | Purpose                                                                                                             |
+| ------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`            | Yes                | PostgreSQL connection used by the app and migrations.                                                               |
+| `DATABASE_URL_TEST`       | Tests              | Separate PostgreSQL database for integration tests.                                                                 |
+| `JWT_SECRET`              | Yes                | HMAC signing key; at least 32 characters.                                                                           |
+| `APP_ORIGIN`              | Yes for production | Public origin used for CSRF checks and invite links; use HTTPS in production.                                       |
+| `NODE_ENV`                | Yes for production | Set to `production` for deployed service.                                                                           |
+| `SESSION_COOKIE_NAME`     | No                 | Session cookie name; defaults to `fb_session`.                                                                      |
+| `ALLOW_DEMO_SEED`         | No                 | Must equal `true` together with `--force-remote` to seed a non-local database. Production seeding remains disabled. |
+| `AI_ENABLED`              | No                 | Set to `"false"` to disable all AI features globally. Defaults to `"true"` if set, but each family must also enable AI in their settings. |
+| `ANTHROPIC_API_KEY`       | No                 | Anthropic API key. Leave blank to run without AI — all AI features degrade gracefully.                              |
+| `AI_MODEL_FAST`           | No                 | Model ID for categorisation, text parse, bank-message import. Default: `claude-haiku-4-5-20251001`.                 |
+| `AI_MODEL_VISION`         | No                 | Model ID for receipt OCR. Default: `claude-sonnet-5-5`.                                                             |
+| `AI_MODEL_COACH`          | No                 | Model ID for AI coach and scenario explanations. Default: `claude-sonnet-5-5`.                                      |
+| `AI_MONTHLY_CAP_MICROS`   | No                 | Monthly cost cap per family in micros (1 micro = 0.000001 USD). Default `5000000` (~$5 USD / family / month).       |
+| `AI_RATE_LIMIT_CALLS`     | No                 | Per-user AI calls allowed per window. Default `20`.                                                                 |
+| `AI_RATE_LIMIT_WINDOW_MS` | No                 | Rate-limit window in milliseconds. Default `600000` (10 minutes).                                                   |
+
+## npm scripts
+
+| Script                    | Purpose                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------ |
+| `npm run dev`             | Start Vite dev server.                                                         |
+| `npm run build`           | Production build.                                                              |
+| `npm run start`           | Start the built server (after `npm run build`).                                |
+| `npm test`                | Run all Vitest tests (unit + integration).                                     |
+| `npm run lint`            | ESLint check.                                                                  |
+| `npm run format`          | Prettier format.                                                               |
+| `npm run seed:demo`       | Create the deterministic Sharma Family demo in a local dev database.           |
+| `npm run insights:recompute` | Recompute and persist insights for all families. Safe to run via cron.      |
+| `npm run notifications:run` | Generate and deduplicate notifications for all families. Safe to run every few minutes. |
+| `npm run ai:smoke`        | Make one tiny Anthropic API call if `ANTHROPIC_API_KEY` is set; exit 0 if not. |
 
 ## Database backups and known limitations
 
