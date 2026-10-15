@@ -60,7 +60,8 @@
 - [x] Expand deterministic demo fixtures and add a local-only read-only `EXPLAIN ANALYZE` tool.
 - [x] Add operational post-deploy, backup, and rollback guidance; complete `FINAL_REPORT.md`.
 - [x] Run the full 158-test suite twice, TypeScript, ESLint, Prisma generate/validate/migrate checks, production build, production dependency audit, and formatting checks.
-- [ ] Commit the verified changes and attempt the explicitly requested GitHub push.
+- [x] Commit the verified feature slice locally as `23faa91`.
+- [blocked] Push to `origin/fixes`: Git could not prompt for credentials, so `6c1bc3c` and `23faa91` remain local and are not published.
 
 ### Measured query-plan sample
 

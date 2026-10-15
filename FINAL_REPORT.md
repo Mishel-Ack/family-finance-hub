@@ -53,6 +53,6 @@ These are single-run local measurements on small fixtures. PostgreSQL may choose
 
 ## Deployment and GitHub
 
-No deployment was performed. Docker image validation remains unavailable because Docker Desktop's engine was not running. The local commit and GitHub push outcome are reported in the completion summary.
+No deployment was performed. Docker image validation remains unavailable because Docker Desktop's engine was not running.
 
-The hardening slice preceding this continuation is committed locally as `6c1bc3c Harden rate limiting and server diagnostics`; its earlier push failed because Git could not prompt for credentials.
+The hardening slice is committed locally as `6c1bc3c Harden rate limiting and server diagnostics`; the completed feature slice is committed locally as `23faa91 Finish remaining family budget features`. The push to `origin/fixes` failed because Git could not prompt for credentials. Neither local commit is confirmed as published to GitHub.
