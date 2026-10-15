@@ -278,14 +278,6 @@ export async function seedDemo(args = process.argv.slice(2)) {
         amountPaise: toPaise(amount),
         description,
         date,
-        visibility: "SHARED",
-        familyId: family.id,
-        userId: users[memberIndex]!.id,
-        memberId: member.id,
-        categoryId: expenseCategory.id,
-        amountPaise: toPaise(amount),
-        description,
-        date,
         visibility: "SHARED" as const,
       });
     }

@@ -104,6 +104,7 @@ export interface ExpenseInput {
   date: string;
   description?: string;
   visibility?: "SHARED" | "PRIVATE";
+  clientRequestId?: string;
   importFingerprint?: string;
   split?:
     | undefined

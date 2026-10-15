@@ -130,6 +130,12 @@ const validInputs: Record<string, unknown> = {
   giveInsightFeedbackFn: { insightId: "00000000-0000-4000-8000-000000000001", verdict: "USEFUL" },
   setIncomeProfileFn: 100000,
   runPlannerFn: [],
+  exportExpensesFn: { includePrivate: false },
+  getFinancialHealthFn: undefined,
+  listScenariosFn: undefined,
+  createScenarioFn: { name: "Security scenario", changes: [] },
+  renameScenarioFn: { id: "00000000-0000-4000-8000-000000000001", name: "Renamed" },
+  deleteScenarioFn: "00000000-0000-4000-8000-000000000001",
   getPlanningAssetsFn: undefined,
   createSinkingFundFn: { name: "Emergency", targetPaise: 10000, dueDate: "2027-01-01" },
   createGoalFn: { name: "Car", targetPaise: 100000, targetDate: "2027-01-01" },
@@ -147,6 +153,9 @@ const validInputs: Record<string, unknown> = {
   listNotificationsFn: undefined,
   markNotificationReadFn: "00000000-0000-4000-8000-000000000001",
   markAllNotificationsReadFn: undefined,
+  getNotificationPreferencesFn: undefined,
+  updateNotificationPreferenceFn: { type: "INSIGHT", inApp: false },
+  listRecurringSubscriptionsFn: undefined,
   updateProfileNameFn: "Updated Name",
   updateOwnDisplayNameFn: "Updated Name",
   addFamilyMemberFn: { displayName: "New Member", role: "MEMBER" },
@@ -379,6 +388,13 @@ describe("server-function security coverage", () => {
         title: "Foreign conversation",
       },
     });
+    const scenarioB = await prisma.scenario.create({
+      data: {
+        familyId: familyB.id,
+        name: "Foreign scenario",
+        definition: [],
+      },
+    });
 
     setAuthResolverForTests(async () => ({
       userId: ownerA.id,
@@ -428,6 +444,8 @@ describe("server-function security coverage", () => {
       getCoachConversationFn: conversationB.id,
       deleteCoachConversationFn: conversationB.id,
       askCoachFn: { conversationId: conversationB.id, message: "What is my spend?" },
+      renameScenarioFn: { id: scenarioB.id, name: "Attempted rename" },
+      deleteScenarioFn: scenarioB.id,
     };
     // The registry is deliberately exhaustive: a new ID-accepting endpoint must add a case here.
     const idEndpoints = [
@@ -460,6 +478,8 @@ describe("server-function security coverage", () => {
       "getCoachConversationFn",
       "deleteCoachConversationFn",
       "askCoachFn",
+      "renameScenarioFn",
+      "deleteScenarioFn",
     ];
     // Explicit exception registry: these functions accept no family-scoped record IDs.
     // Auth and invite entry points accept credentials, while create and report inputs carry values.
@@ -497,13 +517,20 @@ describe("server-function security coverage", () => {
       "setIncomeProfileFn",
       "getIncomeProfileFn",
       "runPlannerFn",
+      "exportExpensesFn",
       "getPlanningAssetsFn",
+      "getFinancialHealthFn",
+      "listScenariosFn",
+      "createScenarioFn",
+      "listRecurringSubscriptionsFn",
       "createSinkingFundFn",
       "createGoalFn",
       "listPurchaseRequestsFn",
       "submitPurchaseRequestFn",
       "listNotificationsFn",
       "markAllNotificationsReadFn",
+      "getNotificationPreferencesFn",
+      "updateNotificationPreferenceFn",
       "getFamilyStoryFn",
       "generateFamilyStoryFn",
       "getInviteDetailsFn",
@@ -531,6 +558,11 @@ describe("server-function security coverage", () => {
           data: { year: 2026, memberId: memberB.id },
         })) as number[];
         expect(result, `${name} returns no foreign-family rows`).toEqual(Array(12).fill(0));
+        continue;
+      }
+      if (name === "listScenariosFn") {
+        const result = (await endpoints.get(name)!({ data: undefined })) as unknown[];
+        expect(result, `${name} returns no foreign-family rows`).toEqual([]);
         continue;
       }
       let error: unknown;

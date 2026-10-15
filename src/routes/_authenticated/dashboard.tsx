@@ -30,6 +30,7 @@ import { activitySearchSchema } from "@/lib/activity-queries";
 import { listFamilyMembers } from "@/services/family";
 import { SmartAddDialog } from "@/components/expenses/SmartAddDialog";
 import { InsightsPanel } from "@/components/dashboard/InsightsPanel";
+import { FinancialHealthCard } from "@/components/dashboard/FinancialHealthCard";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   validateSearch: (search: Record<string, unknown>) =>
@@ -178,6 +179,7 @@ function DashboardPage() {
           <p className="text-sm text-muted-foreground">Family totals exclude private expenses.</p>
 
           <InsightsPanel />
+          <FinancialHealthCard />
 
           <Card className="shadow-soft">
             <CardHeader>

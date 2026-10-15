@@ -137,6 +137,24 @@ export function PlanningAssetsPanel() {
               }}
             >
               <h3 className="font-medium">Create a sinking fund</h3>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setFundName("Diwali")}
+                >
+                  Diwali template
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setFundName("School fees")}
+                >
+                  School fees template
+                </Button>
+              </div>
               <Label htmlFor="fund-name">Fund name</Label>
               <Input
                 id="fund-name"

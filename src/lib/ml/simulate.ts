@@ -1,7 +1,12 @@
 import { seededRandom } from "@/lib/ml/forecast";
 
 export type ScenarioChange =
-  | { type: "REDUCE_CATEGORY"; categoryId: string; percent: number; fromMonth?: number }
+  | {
+      type: "REDUCE_CATEGORY";
+      categoryId: string;
+      percent: number;
+      fromMonth?: number | undefined;
+    }
   | { type: "RECURRING_EXPENSE"; categoryId: string; amountPaise: number; startMonth: number }
   | { type: "ONE_OFF_EXPENSE"; categoryId: string; amountPaise: number; month: number }
   | { type: "INCOME_CHANGE"; amountPaise: number; fromMonth: number }

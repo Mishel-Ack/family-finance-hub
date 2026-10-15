@@ -24,6 +24,7 @@ import { Route as AuthenticatedPlannerRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
 import { Route as AuthenticatedStoryRouteImport } from './routes/_authenticated/story'
+import { Route as AuthenticatedSubscriptionsRouteImport } from './routes/_authenticated/subscriptions'
 import { Route as ApiHealthRouteImport } from './routes/api.health'
 import { Route as JoinTokenRouteImport } from './routes/join.$token'
 
@@ -101,6 +102,12 @@ const AuthenticatedStoryRoute = AuthenticatedStoryRouteImport.update({
   path: '/story',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedSubscriptionsRoute =
+  AuthenticatedSubscriptionsRouteImport.update({
+    id: '/subscriptions',
+    path: '/subscriptions',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
@@ -127,6 +134,7 @@ export interface FileRoutesByFullPath {
   '/profile': typeof AuthenticatedProfileRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/story': typeof AuthenticatedStoryRoute
+  '/subscriptions': typeof AuthenticatedSubscriptionsRoute
   '/api/health': typeof ApiHealthRoute
   '/join/$token': typeof JoinTokenRoute
 }
@@ -145,6 +153,7 @@ export interface FileRoutesByTo {
   '/profile': typeof AuthenticatedProfileRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/story': typeof AuthenticatedStoryRoute
+  '/subscriptions': typeof AuthenticatedSubscriptionsRoute
   '/api/health': typeof ApiHealthRoute
   '/join/$token': typeof JoinTokenRoute
 }
@@ -165,6 +174,7 @@ export interface FileRoutesById {
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/story': typeof AuthenticatedStoryRoute
+  '/_authenticated/subscriptions': typeof AuthenticatedSubscriptionsRoute
   '/api/health': typeof ApiHealthRoute
   '/join/$token': typeof JoinTokenRoute
 }
@@ -185,6 +195,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reports'
     | '/story'
+    | '/subscriptions'
     | '/api/health'
     | '/join/$token'
   fileRoutesByTo: FileRoutesByTo
@@ -203,6 +214,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reports'
     | '/story'
+    | '/subscriptions'
     | '/api/health'
     | '/join/$token'
   id:
@@ -222,6 +234,7 @@ export interface FileRouteTypes {
     | '/_authenticated/profile'
     | '/_authenticated/reports'
     | '/_authenticated/story'
+    | '/_authenticated/subscriptions'
     | '/api/health'
     | '/join/$token'
   fileRoutesById: FileRoutesById
@@ -341,6 +354,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedStoryRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/subscriptions': {
+      id: '/_authenticated/subscriptions'
+      path: '/subscriptions'
+      fullPath: '/subscriptions'
+      preLoaderRoute: typeof AuthenticatedSubscriptionsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/api/health': {
       id: '/api/health'
       path: '/api/health'
@@ -371,6 +391,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedStoryRoute: typeof AuthenticatedStoryRoute
+  AuthenticatedSubscriptionsRoute: typeof AuthenticatedSubscriptionsRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -386,6 +407,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedStoryRoute: AuthenticatedStoryRoute,
+  AuthenticatedSubscriptionsRoute: AuthenticatedSubscriptionsRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

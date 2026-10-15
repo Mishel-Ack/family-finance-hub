@@ -122,17 +122,24 @@ npx tsc --noEmit
 
 This project builds with Nitro's `node-server` preset and uses the standard Prisma Client. The health check at `/api/health` returns HTTP 200 when PostgreSQL is reachable and HTTP 503 otherwise.
 
-1. Create a Render **Web Service** from this repository and select **Docker** as the runtime. Render builds from the included `Dockerfile`.
-2. Add a PostgreSQL database in Render and set these service environment variables:
-   - `DATABASE_URL`: Render's internal PostgreSQL connection string.
-   - `JWT_SECRET`: a strong random secret with at least 32 characters.
-   - `APP_ORIGIN`: the public HTTPS origin, for example `https://familybudget.onrender.com`.
-   - `NODE_ENV`: `production`.
-   - `SESSION_COOKIE_NAME`: optional; defaults to `fb_session`.
-3. Deploy. The container runs `prisma migrate deploy` once at startup before launching the Node server; database migrations are not run per request.
+1. Create a Render Blueprint from this repository and review `render.yaml`. It defines the Docker web service, PostgreSQL database, insight cron, and notification cron.
+2. Set `APP_ORIGIN` in the Blueprint prompt to the exact public HTTPS origin. Render generates `JWT_SECRET`; AI is disabled by default.
+3. Deploy. The web container and cron jobs run `prisma migrate deploy` before starting their respective work.
 4. Check `https://<your-service>.onrender.com/api/health` after deployment.
 
 For a local production smoke check, build with `npm run build`, set the production environment variables, run `npx prisma migrate deploy`, and start with `npm run start`.
+
+## UX, notifications, and offline use
+
+The app supports saved planner scenarios, sinking-fund templates, a shared-spending health trend, recurring expense candidates, and per-user in-app notification preferences. The scheduled notification job is idempotent and can be run with `npm run notifications:run`.
+
+The expense form can queue drafts in IndexedDB while offline and sync them when connectivity returns. The queue is scoped to the active user and family, is stored locally without encryption, and uses an idempotency key to avoid duplicate expenses after retries. A pending-sync badge appears in the app shell.
+
+Use Ctrl+K (or Cmd+K on macOS) to search navigation labels. Light, dark, and system themes are available in Settings. Voice entry uses browser speech recognition when supported; recognized text is passed through the normal expense draft parser and should be reviewed before saving.
+
+The service worker caches only the offline page, manifest, and icons. It does not cache authenticated responses or provide background expense synchronization.
+
+Additional implementation and operational references are in [docs/architecture.md](./docs/architecture.md), [docs/ml-explained.md](./docs/ml-explained.md), [docs/test-plan.md](./docs/test-plan.md), [docs/deployment.md](./docs/deployment.md), and [docs/demo-script.md](./docs/demo-script.md).
 
 ## Splits and settle-up
 
@@ -144,15 +151,27 @@ When a member leaves or is removed, the account is detached and its membership i
 
 ## Planning, insights and monthly story
 
-The What-if Planner runs a deterministic 1,000-run projection from the last six calendar months of **shared** expenses. It supports a savings target and reports when the family has too little history or has not configured income. Forecasts are estimates, not guarantees. Sinking funds and goals are family-scoped; fund contributions are recorded as explicit contribution rows rather than expenses. The monthly set-aside is derived from the remaining target and whole months to the due date.
+The What-if Planner runs a deterministic 1,000-run projection from the last six calendar months of **shared** expenses. It supports a savings target and reports when the family has too little history or has not configured income. Forecasts are estimates, not guarantees. Scenarios, sinking funds, and goals are family-scoped; fund contributions are recorded as explicit contribution rows rather than expenses. The monthly set-aside is derived from the remaining target and whole months to the due date.
 
 The dashboard Insights panel and the `/story` report use shared expense reads through `src/lib/expense-queries.ts`. Story reports are recomputed on demand by OWNER/ADMIN and stored idempotently per family and month. CSV export offers shared rows or shared rows plus only the caller's own private rows; spreadsheet formula-leading cells are escaped and paise is formatted without floating point math.
 
-The app includes a static offline page and install manifest. Its service worker caches only the offline page, manifest and icon; it does not cache API responses or provide offline expense synchronization. Voice entry uses the browser's Web Speech API when supported and sends the transcript through the normal draft parser; recognition quality depends on the browser and device.
+### ML and analytics evaluation
+
+These are deterministic fixture metrics enforced by tests, not production guarantees:
+
+| Component                | Test fixture result                                      | Measurement notes                                                                |
+| ------------------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Merchant categorization  | At least 80% accuracy                                    | Date-ordered 40-row merchant fixture; 32 rows for history, 8 held out; no LLM.   |
+| Forecast backtest        | MAE and MAPE are calculated                              | Uses only preceding months to forecast each held-out month.                      |
+| Anomaly detection        | 100% recall on the seeded outlier                        | Synthetic 12-expense fixture with one known outlier; precision is also returned. |
+| Planner simulation       | 1,000 deterministic runs                                 | Unit test asserts a representative fixture completes in under 200 ms locally.    |
+| Financial health scoring | Partial and complete confidence values are distinguished | Incomplete inputs are reported instead of being silently treated as zero.        |
+
+Run `npm test` to execute these regression checks. Results depend on the fixture and do not indicate that a forecast or anomaly is certain.
 
 ## Demo seed
 
-Run `npm run seed:demo` against a local development database to create the deterministic Sharma Family demo household. The script refuses production and remote database targets by default. It creates four accounts (`demo-owner@example.com`, `demo-admin@example.com`, `demo-member@example.com`, and `demo-viewer@example.com`) with one shared password, printed only in non-production. The seed is idempotent; `npm run seed:demo -- --reset` deletes only the deterministic demo family and recreates its records.
+Run `npm run seed:demo` against a local development database to create the deterministic Sharma Family demo household. Use `npm run seed:demo -- --large` to add 376 more transactions to the 24 baseline expenses (400 total), spanning six calendar months with repeated merchants and seeded outliers. The script refuses production and remote database targets by default. It creates four accounts (`demo-owner@example.com`, `demo-admin@example.com`, `demo-member@example.com`, and `demo-viewer@example.com`) with one shared password, printed only in non-production. The seed is idempotent; `npm run seed:demo -- --reset` deletes only the deterministic demo family and recreates its records.
 
 Remote demo seeding requires both `--force-remote` and `ALLOW_DEMO_SEED=true`; production is always refused. Never use demo accounts or seed data on a production database.
 
@@ -190,6 +209,10 @@ Remote demo seeding requires both `--force-remote` and `ALLOW_DEMO_SEED=true`; p
 | `npm run insights:recompute` | Recompute and persist insights for all families. Safe to run via cron.                  |
 | `npm run notifications:run`  | Generate and deduplicate notifications for all families. Safe to run every few minutes. |
 | `npm run ai:smoke`           | Make one tiny Anthropic API call if `ANTHROPIC_API_KEY` is set; exit 0 if not.          |
+
+## CI
+
+GitHub Actions runs lint, TypeScript, the full test suite, and a production build against PostgreSQL 16 for pushes and pull requests. See [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
 
 ## Database backups and known limitations
 

@@ -16,6 +16,7 @@ import { utcCalendarDate } from "@/lib/dates";
 import { assertSameOrigin } from "@/lib/http-utils";
 import {
   findListableExpense,
+  findExpenseByClientRequestId,
   findSharedExpenseWithSplits,
   listVisibleExpenses,
   listableWhere,
@@ -24,6 +25,11 @@ import { recordActivity, redactExpenseActivity } from "@/lib/activity-queries";
 import { computeEqualSplit, computeExactSplit, computePercentSplit } from "@/lib/splits";
 import { claimImportFingerprint } from "@/lib/import-fingerprint-queries";
 import { queueInsightRecompute } from "@/services/insights";
+import {
+  enqueueExpense,
+  listQueuedExpenses,
+  removeQueuedExpense,
+} from "@/lib/offline-expense-queue";
 import type { z } from "zod";
 import type { splitInputSchema } from "@/lib/validations";
 
@@ -234,6 +240,16 @@ export const createExpenseFn = createServerFn({ method: "POST" })
     assertSameOrigin();
     const auth = await requireMember("expense:create");
 
+    if (data.clientRequestId) {
+      const existing = await findExpenseByClientRequestId(
+        prisma,
+        auth.familyId,
+        auth.userId,
+        data.clientRequestId,
+      );
+      if (existing) return { created: false };
+    }
+
     const amountPaise = toPaise(data.amount);
 
     let memberId: string | null = data.memberId ?? null;
@@ -249,45 +265,71 @@ export const createExpenseFn = createServerFn({ method: "POST" })
       assertMemberInFamily(auth, memberId),
     ]);
 
-    await serializableExpense(async (tx) => {
-      if (data.importFingerprint) {
-        const claimed = await claimImportFingerprint(tx, auth.familyId, data.importFingerprint);
-        if (!claimed) throw httpError("This bank transaction was already imported", 409);
-      }
-      const category = await tx.category.findFirst({
-        where: { id: data.categoryId, familyId: auth.familyId },
-        select: { name: true },
-      });
-      if (!category) throw notFound("Category not found");
-      const expense = await tx.expense.create({
-        data: {
-          familyId: auth.familyId,
-          userId: auth.userId,
-          memberId,
-          categoryId: data.categoryId,
-          amountPaise,
-          date: utcCalendarDate(data.date),
-          description: data.description ?? "",
-          visibility: data.visibility,
-        },
-      });
-      if (expense.visibility === "SHARED") {
-        await recordActivity(tx, auth, {
-          type: "EXPENSE_CREATED",
-          entityType: "EXPENSE",
-          entityId: expense.id,
-          summary: {
-            amountPaise: expense.amountPaise,
-            categoryName: category.name.slice(0, 80),
-            description: expense.description.slice(0, 80),
+    let created: boolean;
+    try {
+      created = await serializableExpense(async (tx) => {
+        if (data.clientRequestId) {
+          const existing = await findExpenseByClientRequestId(
+            tx,
+            auth.familyId,
+            auth.userId,
+            data.clientRequestId,
+          );
+          if (existing) return false;
+        }
+        if (data.importFingerprint) {
+          const claimed = await claimImportFingerprint(tx, auth.familyId, data.importFingerprint);
+          if (!claimed) throw httpError("This bank transaction was already imported", 409);
+        }
+        const category = await tx.category.findFirst({
+          where: { id: data.categoryId, familyId: auth.familyId },
+          select: { name: true },
+        });
+        if (!category) throw notFound("Category not found");
+        const expense = await tx.expense.create({
+          data: {
+            familyId: auth.familyId,
+            userId: auth.userId,
+            memberId,
+            categoryId: data.categoryId,
+            amountPaise,
+            date: utcCalendarDate(data.date),
+            description: data.description ?? "",
+            visibility: data.visibility,
+            ...(data.clientRequestId ? { clientRequestId: data.clientRequestId } : {}),
           },
         });
-        if (data.split) await replaceExpenseSplit(tx, auth, expense, amountPaise, data.split, []);
-      } else if (data.split) {
-        throw httpError("Private expenses cannot have splits", 400);
-      }
-    });
-    if (data.visibility === "SHARED") queueInsightRecompute(auth.familyId);
+        if (expense.visibility === "SHARED") {
+          await recordActivity(tx, auth, {
+            type: "EXPENSE_CREATED",
+            entityType: "EXPENSE",
+            entityId: expense.id,
+            summary: {
+              amountPaise: expense.amountPaise,
+              categoryName: category.name.slice(0, 80),
+              description: expense.description.slice(0, 80),
+            },
+          });
+          if (data.split) await replaceExpenseSplit(tx, auth, expense, amountPaise, data.split, []);
+        } else if (data.split) {
+          throw httpError("Private expenses cannot have splits", 400);
+        }
+        return true;
+      });
+    } catch (error) {
+      const uniqueConflict = error instanceof Error && "code" in error && error.code === "P2002";
+      if (!data.clientRequestId || !uniqueConflict) throw error;
+      const existing = await findExpenseByClientRequestId(
+        prisma,
+        auth.familyId,
+        auth.userId,
+        data.clientRequestId,
+      );
+      if (!existing) throw error;
+      created = false;
+    }
+    if (created && data.visibility === "SHARED") queueInsightRecompute(auth.familyId);
+    return { created };
   });
 
 export const updateExpenseFn = createServerFn({ method: "POST" })
@@ -439,8 +481,47 @@ export function listExpenses(
   return listExpensesFn({ data: { from, to, visibility } });
 }
 
-export function createExpense(input: ExpenseInput) {
-  return createExpenseFn({ data: input });
+export async function createExpense(
+  input: ExpenseInput,
+  scope?: { familyId: string; userId: string },
+): Promise<{ queued: boolean }> {
+  const clientRequestId = input.clientRequestId ?? crypto.randomUUID();
+  const parsed = expenseSchema.parse({ ...input, clientRequestId });
+  const request: ExpenseInput = {
+    amount: parsed.amount,
+    categoryId: parsed.categoryId,
+    date: parsed.date,
+    description: parsed.description,
+    visibility: parsed.visibility,
+    clientRequestId,
+    memberId: parsed.memberId ?? null,
+    ...(parsed.importFingerprint ? { importFingerprint: parsed.importFingerprint } : {}),
+    ...(parsed.split !== undefined ? { split: parsed.split } : {}),
+  };
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    if (!scope) throw new Error("The family account is required to queue an offline expense.");
+    await enqueueExpense(scope.familyId, scope.userId, request);
+    return { queued: true };
+  }
+  await createExpenseFn({ data: request });
+  return { queued: false };
+}
+
+export async function syncQueuedExpenses(scope: { familyId: string; userId: string }) {
+  const pending = await listQueuedExpenses(scope.familyId, scope.userId);
+  let synced = 0;
+  let firstError: unknown;
+  for (const expense of pending) {
+    try {
+      await createExpenseFn({ data: expense.input });
+      await removeQueuedExpense(expense.key);
+      synced++;
+    } catch (error) {
+      firstError ??= error;
+    }
+  }
+  if (firstError) throw firstError;
+  return synced;
 }
 
 export function updateExpense(id: string, input: ExpenseInput) {

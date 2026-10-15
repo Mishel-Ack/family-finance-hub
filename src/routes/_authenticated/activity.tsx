@@ -30,6 +30,7 @@ const groups: Array<{ value: ActivityFilter | "ALL"; label: string }> = [
   { value: "BUDGETS", label: "Budgets" },
   { value: "CATEGORIES", label: "Categories" },
   { value: "MEMBERS", label: "Members" },
+  { value: "SCENARIOS", label: "Planner scenarios" },
 ];
 
 function ActivityPage() {

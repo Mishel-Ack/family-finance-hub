@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard,
@@ -14,13 +14,27 @@ import {
   ArrowLeftRight,
   SlidersHorizontal,
   Sparkles,
+  Repeat,
+  Search,
 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { NotificationCenter } from "@/components/layout/NotificationCenter";
 import { useAuth } from "@/hooks/auth-context";
+import { countQueuedExpenses } from "@/lib/offline-expense-queue";
+import { syncQueuedExpenses } from "@/services/expense";
+import {
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { matchesCommandLabel } from "@/lib/command-filter";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -33,6 +47,7 @@ const NAV = [
   { to: "/story", label: "Money Story", icon: PieChart },
   { to: "/approvals", label: "Approvals", icon: ReceiptIndianRupee },
   { to: "/planner", label: "Planner", icon: SlidersHorizontal },
+  { to: "/subscriptions", label: "Subscriptions", icon: Repeat },
   { to: "/profile", label: "Settings", icon: Settings },
 ] as const;
 
@@ -63,7 +78,13 @@ function NavLinks({ onNavigate }: { onNavigate?: (() => void) | undefined }) {
   );
 }
 
-function SidebarBody({ onNavigate }: { onNavigate?: (() => void) | undefined }) {
+function SidebarBody({
+  onNavigate,
+  onCommand,
+}: {
+  onNavigate?: (() => void) | undefined;
+  onCommand?: (() => void) | undefined;
+}) {
   const { profile, family, signOut } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -85,6 +106,16 @@ function SidebarBody({ onNavigate }: { onNavigate?: (() => void) | undefined }) 
       </Link>
 
       <div className="my-5 h-px bg-sidebar-border" />
+      <Button
+        type="button"
+        variant="outline"
+        className="mb-3 justify-start border-sidebar-border bg-sidebar-accent/40 text-sidebar-foreground hover:bg-sidebar-accent"
+        onClick={onCommand}
+        aria-label="Search pages (Ctrl+K)"
+      >
+        <Search className="mr-2 h-4 w-4" aria-hidden />
+        Search pages <span className="ml-auto text-xs opacity-70">Ctrl+K</span>
+      </Button>
       <NavLinks onNavigate={onNavigate} />
 
       <div className="mt-auto space-y-3">
@@ -107,13 +138,73 @@ function SidebarBody({ onNavigate }: { onNavigate?: (() => void) | undefined }) 
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const { profile } = useAuth();
+  const [commandOpen, setCommandOpen] = useState(false);
+  const { profile, family, user } = useAuth();
+  const navigate = useNavigate();
+  const [online, setOnline] = useState(true);
+  const queryClient = useQueryClient();
+  const scope = family?.id && user?.id ? { familyId: family.id, userId: user.id } : undefined;
+  const pending = useQuery({
+    queryKey: ["pending-expenses", user?.id, family?.id],
+    queryFn: () => (scope ? countQueuedExpenses(scope.familyId, scope.userId) : Promise.resolve(0)),
+    enabled: Boolean(scope && typeof window !== "undefined"),
+  });
+  const pendingCount = pending.data ?? 0;
+  const refreshPending = pending.refetch;
+  const sync = useMutation({
+    mutationFn: () => {
+      if (!scope) throw new Error("Your family account is not ready.");
+      return syncQueuedExpenses(scope);
+    },
+    onSuccess: async (count) => {
+      if (count) toast.success(`${count} offline expense${count === 1 ? "" : "s"} synced`);
+      await queryClient.invalidateQueries({
+        queryKey: ["pending-expenses", user?.id, family?.id],
+      });
+      await queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      await queryClient.invalidateQueries({ queryKey: ["summary"] });
+      await queryClient.invalidateQueries({ queryKey: ["activity"] });
+    },
+    onError: (error: Error) => toast.error(`Offline expenses could not sync: ${error.message}`),
+  });
+  const syncPending = sync.mutate;
+
+  useEffect(() => {
+    const updateConnection = () => {
+      const isOnline = navigator.onLine;
+      setOnline(isOnline);
+      void refreshPending();
+      if (isOnline && pendingCount > 0) syncPending();
+    };
+    const updatePending = () => void refreshPending();
+    setOnline(navigator.onLine);
+    window.addEventListener("online", updateConnection);
+    window.addEventListener("offline", updateConnection);
+    window.addEventListener("offline-expense-queue-changed", updatePending);
+    if (navigator.onLine && pendingCount > 0) syncPending();
+    return () => {
+      window.removeEventListener("online", updateConnection);
+      window.removeEventListener("offline", updateConnection);
+      window.removeEventListener("offline-expense-queue-changed", updatePending);
+    };
+  }, [family?.id, user?.id, pendingCount, refreshPending, syncPending]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <div className="flex min-h-screen w-full bg-background">
       <aside className="hidden w-64 shrink-0 lg:block">
         <div className="fixed inset-y-0 left-0 w-64">
-          <SidebarBody />
+          <SidebarBody onCommand={() => setCommandOpen(true)} />
         </div>
       </aside>
 
@@ -128,11 +219,25 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="w-72 border-0 p-0">
-                <SidebarBody onNavigate={() => setOpen(false)} />
+                <SidebarBody
+                  onNavigate={() => setOpen(false)}
+                  onCommand={() => {
+                    setOpen(false);
+                    setCommandOpen(true);
+                  }}
+                />
               </SheetContent>
             </Sheet>
             <span className="text-base font-semibold tracking-tight">FamilyBudget</span>
           </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Search pages (Ctrl+K)"
+            onClick={() => setCommandOpen(true)}
+          >
+            <Search className="h-5 w-5" aria-hidden />
+          </Button>
           {profile?.name ? (
             <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
               {profile.name}
@@ -141,9 +246,63 @@ export function AppShell({ children }: { children: ReactNode }) {
         </header>
 
         <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <div className="mx-auto w-full max-w-6xl space-y-6">{children}</div>
+          <div className="mx-auto w-full max-w-6xl space-y-6">
+            {!online || (pending.data ?? 0) > 0 || pending.isError ? (
+              <div
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/50 px-3 py-2 text-sm"
+                role={pending.isError ? "alert" : "status"}
+              >
+                <span>
+                  {pending.isError
+                    ? "Offline expense status is unavailable."
+                    : !online
+                      ? "You are offline."
+                      : ""}
+                  {!pending.isError && (pending.data ?? 0) > 0
+                    ? ` ${pending.data} expense${pending.data === 1 ? "" : "s"} waiting to sync.`
+                    : ""}
+                </span>
+                {online && (pending.data ?? 0) > 0 ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={sync.isPending}
+                    onClick={() => sync.mutate()}
+                  >
+                    {sync.isPending ? "Syncing…" : "Sync now"}
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+            {children}
+          </div>
         </main>
       </div>
+      <CommandDialog
+        open={commandOpen}
+        onOpenChange={setCommandOpen}
+        filter={(value, search) => (matchesCommandLabel(value, search) ? 1 : 0)}
+      >
+        <CommandInput placeholder="Search pages…" aria-label="Search pages" />
+        <CommandList>
+          <CommandEmpty>No matching pages.</CommandEmpty>
+          <CommandGroup heading="Pages">
+            {NAV.map((item) => (
+              <CommandItem
+                key={item.to}
+                value={item.label}
+                onSelect={() => {
+                  setCommandOpen(false);
+                  void navigate({ to: item.to });
+                }}
+              >
+                <item.icon className="h-4 w-4" aria-hidden />
+                {item.label}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </CommandList>
+      </CommandDialog>
     </div>
   );
 }

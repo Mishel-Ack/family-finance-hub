@@ -115,6 +115,20 @@ export async function findSharedExpenseWithSplits(db: ExpenseReader, familyId: s
   });
 }
 
+export async function findExpenseByClientRequestId(
+  db: ExpenseReader,
+  familyId: string,
+  userId: string,
+  clientRequestId: string,
+) {
+  return db.expense.findUnique({
+    where: {
+      familyId_userId_clientRequestId: { familyId, userId, clientRequestId },
+    },
+    select: { id: true },
+  });
+}
+
 export async function listSharedExpensesWithSplits(db: ExpenseReader, familyId: string) {
   return db.expense.findMany({
     where: sharedWhere(familyId, { splits: { some: {} } }),

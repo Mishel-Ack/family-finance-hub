@@ -55,7 +55,7 @@ import type { Expense } from "@/types";
 import { computeEqualSplit, computeExactSplit, computePercentSplit } from "@/lib/splits";
 import { toPaise } from "@/lib/money";
 import { SmartAddDialog } from "@/components/expenses/SmartAddDialog";
-import { expensesToCsv } from "@/lib/csv-export";
+import { exportExpenses } from "@/services/export";
 
 export const Route = createFileRoute("/_authenticated/expenses")({
   head: () => ({
@@ -76,7 +76,7 @@ export const Route = createFileRoute("/_authenticated/expenses")({
 });
 
 function ExpensesPage() {
-  const { family, canEdit } = useAuth();
+  const { family, user, canEdit } = useAuth();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
@@ -163,12 +163,8 @@ function ExpensesPage() {
 
   const exportCsv = async (includePrivate: boolean) => {
     try {
-      const exportRows = await listExpenses(
-        undefined,
-        undefined,
-        includePrivate ? "VISIBLE" : "SHARED",
-      );
-      const blob = new Blob([expensesToCsv(exportRows, includePrivate)], {
+      const { csv } = await exportExpenses(includePrivate);
+      const blob = new Blob([csv], {
         type: "text/csv;charset=utf-8",
       });
       const url = URL.createObjectURL(blob);
@@ -180,8 +176,10 @@ function ExpensesPage() {
       link.click();
       URL.revokeObjectURL(url);
       toast.success("CSV export downloaded");
-    } catch {
-      toast.error("Could not export expenses. Please try again.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not export expenses. Please try again.",
+      );
     }
   };
 
@@ -234,11 +232,21 @@ function ExpensesPage() {
         visibility: parsed.data.visibility,
         split: parsed.data.split,
       };
-      if (editId) await updateExpense(editId, input);
-      else await createExpense(input);
+      if (editId) {
+        await updateExpense(editId, input);
+        return false;
+      }
+      if (!family?.id || !user?.id) throw new Error("Your family account is not ready.");
+      return (await createExpense(input, { familyId: family.id, userId: user.id })).queued;
     },
-    onSuccess: () => {
-      toast.success(editId ? "Expense updated" : "Expense added");
+    onSuccess: (queued) => {
+      toast.success(
+        editId
+          ? "Expense updated"
+          : queued
+            ? "Expense saved offline and will sync when you reconnect"
+            : "Expense added",
+      );
       setOpen(false);
       setEditId(null);
       setForm({
