@@ -4,7 +4,7 @@ import { requireMember } from "@/lib/authz";
 import { assertSameOrigin } from "@/lib/http-utils";
 import { listSharedExpenses, listVisibleExpenses } from "@/lib/expense-queries";
 import { expensesToCsv } from "@/lib/csv-export";
-import { enforceRateLimit } from "@/lib/rate-limit";
+import { consumeRateLimit } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 
 export const exportExpensesFn = createServerFn({ method: "POST" })
@@ -12,7 +12,7 @@ export const exportExpensesFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     assertSameOrigin();
     const auth = await requireMember("readAll");
-    enforceRateLimit(`expense-export:${auth.familyId}:${auth.userId}`, 5, 15 * 60 * 1000);
+    await consumeRateLimit(`expense-export:${auth.familyId}:${auth.userId}`, 5, 15 * 60 * 1000);
     const expenses = data.includePrivate
       ? await listVisibleExpenses(prisma, auth)
       : await listSharedExpenses(prisma, auth.familyId);

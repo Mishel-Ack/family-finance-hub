@@ -103,7 +103,7 @@ describe("AI Coach integration & isolation", () => {
 
   afterAll(async () => {
     setAiProviderForTests(undefined);
-    resetAiRateLimitForTests();
+    await resetAiRateLimitForTests();
     setAuthResolverForTests(undefined);
     setHeadersForTests(undefined);
 
@@ -232,7 +232,7 @@ describe("AI Coach integration & isolation", () => {
       },
     ]);
     setAiProviderForTests(mockProvider);
-    resetAiRateLimitForTests();
+    await resetAiRateLimitForTests();
 
     setAuthResolverForTests(async () => ({
       userId: userAId,
@@ -286,7 +286,7 @@ describe("AI Coach integration & isolation", () => {
       },
     ]);
     setAiProviderForTests(mockProvider);
-    resetAiRateLimitForTests();
+    await resetAiRateLimitForTests();
 
     setAuthResolverForTests(async () => ({
       userId: userAId,

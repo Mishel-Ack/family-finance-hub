@@ -19,6 +19,7 @@ if (process.env["NODE_ENV"] === "production") {
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import { logServerFailure, requestIdFor, withRequestId } from "./lib/server-logger";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -63,16 +64,29 @@ function isH3SwallowedErrorBody(body: string): boolean {
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
-    try {
-      const handler = await getServerEntry();
-      const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
-    } catch (error) {
-      console.error(error);
-      return new Response(renderErrorPage(), {
-        status: 500,
-        headers: { "content-type": "text/html; charset=utf-8" },
-      });
-    }
+    const requestId = requestIdFor();
+    return withRequestId(requestId, async () => {
+      try {
+        const handler = await getServerEntry();
+        const response = await handler.fetch(request, env, ctx);
+        const normalized = await normalizeCatastrophicSsrResponse(response);
+        const headers = new Headers(normalized.headers);
+        headers.set("x-request-id", requestId);
+        return new Response(normalized.body, {
+          status: normalized.status,
+          statusText: normalized.statusText,
+          headers,
+        });
+      } catch (error) {
+        logServerFailure("request_failed", error);
+        return new Response(renderErrorPage(), {
+          status: 500,
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            "x-request-id": requestId,
+          },
+        });
+      }
+    });
   },
 };

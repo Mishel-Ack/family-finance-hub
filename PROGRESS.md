@@ -24,7 +24,7 @@
 
 ## Decisions and known limitations
 
-- The Postgres-backed rate limiter remains skipped per the original decision; current login, AI, and export limits are in-memory and are not shared across replicas.
+- Rate limits are stored in PostgreSQL and shared across replicas; only hashed keys, counts, and reset timestamps are persisted.
 - Offline expense drafts use unencrypted browser IndexedDB, scoped to the active user and family.
 - Voice recognition depends on browser/device support; transcripts still pass through the normal parser and should be reviewed.
 - No additional Prisma migrations were needed in this completion pass: the required scenario, recurring-pattern, notification, and client-request-id schema was already present.
@@ -46,3 +46,16 @@
 | ---- | --------------------------- | ----------------------------------------------------------------------------- |
 | A–B  | Before this completion pass | Present in baseline branch.                                                   |
 | C–G  | 2026-10-15                  | Implemented and verified; see final quality gate and known limitations above. |
+
+## Detailed mission continuation (2026-10-15)
+
+- [x] Replaced in-memory login, invite, AI, and export rate limits with atomic PostgreSQL updates; reused the already-migrated `RateLimitBucket` model, hashed identifiers, injectable test clock, concurrent-attempt coverage, and periodic cleanup.
+- [x] Added server-generated request IDs, structured error metadata without exception messages/stacks, client error-reporting sanitization, and version/migration metadata in `/api/health`.
+- [x] Verified the hardening slice: 22 focused tests, TypeScript, and ESLint pass.
+- [ ] Add budget-threshold and upcoming recurring-payment notifications, including recurring charge confirm/dismiss/manual management.
+- [ ] Complete export date ranges, export activity records, and a print-friendly report.
+- [ ] Expand command-palette actions and scoped expense search; improve offline queue retry/discard/sign-out behavior and accessibility.
+- [ ] Review planner goal-feasibility gaps and make the simulation assumptions explicit and accurate.
+- [ ] Expand deterministic demo fixtures and record performance/query-plan evaluations.
+- [ ] Add operational post-deploy, backup, and rollback guidance; finish `FINAL_REPORT.md`.
+- [ ] Run the full test suite twice, TypeScript, lint, production build, and production dependency audit; commit and push the verified changes.

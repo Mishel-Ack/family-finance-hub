@@ -7,6 +7,12 @@ import { loginServerSchema, registerServerSchema } from "@/lib/validations";
 import { assertSameOrigin } from "@/lib/http-utils";
 import { acceptInviteInTransaction, assertInviteAcceptRateLimit } from "@/lib/invite-acceptance";
 import { registerWithInviteSchema } from "@/lib/validations";
+import {
+  assertRateLimitAvailable,
+  clearRateLimitsForTests,
+  consumeRateLimit,
+  resetRateLimit,
+} from "@/lib/rate-limit";
 
 const SESSION_COOKIE_NAME = process.env["SESSION_COOKIE_NAME"] ?? "fb_session";
 const SEVEN_DAYS_SECONDS = 60 * 60 * 24 * 7;
@@ -132,44 +138,8 @@ async function clearSessionCookie() {
   });
 }
 
-// In-memory rate limiter: 5 failed attempts per email+IP per 15 minutes
-// TODO: Replace with Redis for multi-instance production deployments
-interface RateLimitEntry {
-  count: number;
-  resetAt: number;
-}
-const rateLimitMap = new Map<string, RateLimitEntry>();
-
-function checkRateLimit(key: string): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(key);
-  if (!entry) return true;
-  if (now > entry.resetAt) {
-    rateLimitMap.delete(key);
-    return true;
-  }
-  return entry.count < 5;
-}
-
-function recordFailedAttempt(key: string) {
-  const now = Date.now();
-  const FIFTEEN_MINS = 15 * 60 * 1000;
-  const entry = rateLimitMap.get(key);
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(key, { count: 1, resetAt: now + FIFTEEN_MINS });
-  } else {
-    entry.count += 1;
-  }
-}
-
-function resetRateLimit(key: string) {
-  rateLimitMap.delete(key);
-}
-
 export function resetLoginRateLimitForTests() {
-  if (process.env["NODE_ENV"] !== "test")
-    throw new Error("Rate limit test seam only available in test mode");
-  rateLimitMap.clear();
+  return clearRateLimitsForTests("login");
 }
 
 let registrationFailureForTests: (() => void) | undefined;
@@ -210,23 +180,36 @@ export const loginFn = createServerFn({ method: "POST" })
     const clientIp = getHeader("x-forwarded-for") || getHeader("x-real-ip") || "unknown-ip";
     const rateLimitKey = `${parsed.data.email}:${clientIp}`;
 
-    if (!checkRateLimit(rateLimitKey)) {
-      throw new Error("Too many failed login attempts. Please try again in 15 minutes.");
-    }
+    await assertRateLimitAvailable(
+      `login:${rateLimitKey}`,
+      5,
+      15 * 60 * 1000,
+      "Too many failed login attempts. Please try again in 15 minutes.",
+    );
 
     const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
     if (!user) {
-      recordFailedAttempt(rateLimitKey);
+      await consumeRateLimit(
+        `login:${rateLimitKey}`,
+        5,
+        15 * 60 * 1000,
+        "Too many failed login attempts. Please try again in 15 minutes.",
+      );
       throw new Error("Invalid email or password");
     }
 
     const valid = await bcrypt.compare(parsed.data.password, user.passwordHash);
     if (!valid) {
-      recordFailedAttempt(rateLimitKey);
+      await consumeRateLimit(
+        `login:${rateLimitKey}`,
+        5,
+        15 * 60 * 1000,
+        "Too many failed login attempts. Please try again in 15 minutes.",
+      );
       throw new Error("Invalid email or password");
     }
 
-    resetRateLimit(rateLimitKey);
+    await resetRateLimit(`login:${rateLimitKey}`);
 
     const token = await createSessionToken(user.id);
     await setSessionCookie(token);
@@ -310,7 +293,7 @@ export const registerWithInviteFn = createServerFn({ method: "POST" })
     if (!parsed.success) {
       throw new Error(parsed.error.issues[0]?.message ?? "Invalid registration details");
     }
-    assertInviteAcceptRateLimit(
+    await assertInviteAcceptRateLimit(
       getHeader("x-forwarded-for") ?? getHeader("x-real-ip") ?? "unknown",
     );
 

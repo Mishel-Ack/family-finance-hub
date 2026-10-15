@@ -29,4 +29,4 @@ Prisma migrations are deployed before the web service starts. Render cron servic
 
 ## Runtime protections
 
-The Docker image runs as the built-in non-root `node` user and probes `/api/health`. Authenticated responses are never cached by the service worker. Login and feature rate limits are currently in-memory; multiple application replicas do not share those counters.
+The Docker image runs as the built-in non-root `node` user and probes `/api/health`. Authenticated responses are never cached by the service worker. Login, invite, AI, and export limits use atomic PostgreSQL counters shared across replicas. Raw user/IP keys are hashed before storage; expired buckets are periodically removed.

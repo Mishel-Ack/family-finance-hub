@@ -45,14 +45,10 @@ export function reportLovableError(error: unknown, context: Record<string, unkno
   // opaque "[object Response]", so pull out the status and URL instead.
   const message =
     error instanceof Response
-      ? `Response ${error.status}${error.url ? ` at ${error.url}` : ""}`
-      : error instanceof Error
-        ? error.message
-        : String(error);
-  const stack = error instanceof Error ? error.stack : undefined;
+      ? `Request failed with status ${error.status}`
+      : `Application error (${error instanceof Error ? error.name : "unknown"})`;
   window.__lovableReportRuntimeError?.({
     message,
-    ...(stack !== undefined && { stack }),
     filename: window.location.pathname,
   });
 }

@@ -10,8 +10,8 @@ import {
   type AiFeature,
   type AiProvider,
 } from "@/lib/ai/provider";
+import { clearRateLimitsForTests, consumeRateLimit } from "@/lib/rate-limit";
 
-const calls = new Map<string, number[]>();
 let providerOverride: AiProvider | undefined;
 
 export function setAiProviderForTests(provider: AiProvider | undefined) {
@@ -21,16 +21,20 @@ export function setAiProviderForTests(provider: AiProvider | undefined) {
 }
 
 export function resetAiRateLimitForTests() {
-  if (process.env["NODE_ENV"] !== "test")
-    throw new Error("AI test seam only available in test mode");
-  calls.clear();
+  return clearRateLimitsForTests("ai");
 }
 
-function assertRateLimit(userId: string, now = Date.now()) {
-  const recent = (calls.get(userId) ?? []).filter((time) => now - time < 10 * 60_000);
-  if (recent.length >= 20) throw httpError("AI request limit reached. Try again later.", 429);
-  recent.push(now);
-  calls.set(userId, recent);
+function aiRateLimitSetting(
+  name: "AI_RATE_LIMIT_CALLS" | "AI_RATE_LIMIT_WINDOW_MS",
+  fallback: number,
+) {
+  const value = process.env[name];
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(`${name} must be a positive integer.`);
+  }
+  return parsed;
 }
 
 function estimateCostMicros(model: string, inputTokens: number, outputTokens: number): number {
@@ -54,7 +58,12 @@ export async function runAiCompletion<T extends AiFeature>(options: {
   });
   if (!family) throw notFound("Family not found");
   if (!family.aiEnabled) throw httpError("AI has not been enabled for this family", 403);
-  assertRateLimit(auth.userId);
+  await consumeRateLimit(
+    `ai:${auth.userId}`,
+    aiRateLimitSetting("AI_RATE_LIMIT_CALLS", 20),
+    aiRateLimitSetting("AI_RATE_LIMIT_WINDOW_MS", 10 * 60_000),
+    "AI request limit reached. Try again later.",
+  );
   const start = Date.now();
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));

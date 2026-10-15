@@ -1,5 +1,6 @@
 import { createStart, createCsrfMiddleware, createMiddleware } from "@tanstack/react-start";
 import { renderErrorPage } from "./lib/error-page";
+import { logServerFailure } from "./lib/server-logger";
 
 const errorMiddleware = createMiddleware().server(async ({ next }) => {
   try {
@@ -8,7 +9,7 @@ const errorMiddleware = createMiddleware().server(async ({ next }) => {
     if (error != null && typeof error === "object" && "statusCode" in error) {
       throw error;
     }
-    console.error(error);
+    logServerFailure("middleware_failed", error);
     return new Response(renderErrorPage(), {
       status: 500,
       headers: { "content-type": "text/html; charset=utf-8" },

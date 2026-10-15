@@ -29,6 +29,8 @@ const scenarioQueryPattern =
   /\.scenario\.(?:findMany|findFirst|findUnique|findUniqueOrThrow|count|groupBy|aggregate|create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/g;
 const recurringPatternQueryPattern =
   /\.recurringPatternRecord\.(?:findMany|findFirst|findUnique|findUniqueOrThrow|count|groupBy|aggregate|create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/g;
+const rateLimitBucketQueryPattern =
+  /\.rateLimitBucket\.(?:findMany|findFirst|findUnique|findUniqueOrThrow|count|create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/g;
 
 function typescriptFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -231,6 +233,24 @@ describe("expense query choke point", () => {
       .flatMap((path) => {
         const contents = readFileSync(path, "utf8");
         return [...contents.matchAll(recurringPatternQueryPattern)].map(
+          (match) =>
+            `${relative(srcRoot, path)}:${contents.slice(0, match.index).split("\n").length}`,
+        );
+      });
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps rate-limit bucket access in the shared rate-limit service", () => {
+    const offenders = typescriptFiles(srcRoot)
+      .filter(
+        (path) =>
+          !["lib/rate-limit.ts", "lib/rate-limit.test.ts"].includes(
+            relative(srcRoot, path).replaceAll("\\", "/"),
+          ),
+      )
+      .flatMap((path) => {
+        const contents = readFileSync(path, "utf8");
+        return [...contents.matchAll(rateLimitBucketQueryPattern)].map(
           (match) =>
             `${relative(srcRoot, path)}:${contents.slice(0, match.index).split("\n").length}`,
         );

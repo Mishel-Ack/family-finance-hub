@@ -204,7 +204,7 @@ beforeEach(async () => {
   configureAuthTests({ cookieHandler: () => undefined });
   configureActivityTests({});
   configureSettlementClockForTests(undefined);
-  resetLoginRateLimitForTests();
+  await resetLoginRateLimitForTests();
 });
 
 afterEach(async () => {
@@ -214,7 +214,7 @@ afterEach(async () => {
   configureAuthTests({});
   configureActivityTests({});
   configureSettlementClockForTests(undefined);
-  resetLoginRateLimitForTests();
+  await resetLoginRateLimitForTests();
   await wipeTestDatabase();
 });
 

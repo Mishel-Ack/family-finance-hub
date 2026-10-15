@@ -27,7 +27,7 @@ Set `DATABASE_URL_TEST` to that database. The Vitest global setup refuses a URL 
 
 - PostgreSQL via Prisma is the only data layer.
 - Registration creates a user, family, OWNER membership, and the eight default categories in one transaction.
-- Login and registration validate input on the server. Passwords use bcryptjs with cost 12. Login failures are rate limited in memory to five failures per email and IP per 15 minutes; this needs Redis for multi-instance deployments.
+- Login and registration validate input on the server. Passwords use bcryptjs with cost 12. Login failures, invite acceptance, AI requests, and CSV exports use an atomic PostgreSQL-backed window limiter.
 - Auth uses a signed, seven-day session cookie with `HttpOnly`, `SameSite=Lax`, and `Secure` in production. Set `SESSION_COOKIE_NAME` to a valid cookie name and provide a `JWT_SECRET` of at least 32 characters. State-changing server functions reject missing or mismatched `Origin` headers; set `APP_ORIGIN` to the public origin in production.
 - Server functions resolve the user and their family membership from the cookie. Family, member, expense, budget, category, and report reads/writes are scoped to that membership. Roles are OWNER, ADMIN, MEMBER, and VIEWER.
 - Money is stored as integer paise. Inputs reject non-positive values and more than two decimal places; display values are formatted in Indian Rupees.
@@ -95,7 +95,7 @@ The table lists every action in `src/lib/authz.ts`. Record-specific guards furth
 - Private expense details and identifiers are excluded from shared activity entries. The activity feed records shared expense events, budgets, categories, membership, invitations, splits, and settlements. It does not record private expense data.
 - Invite links contain a cryptographically random token. The database stores only its SHA-256 hash; links expire after seven days, can be revoked, and are accepted once. Raw invite tokens are returned only when a link is created.
 - Sessions are HMAC-signed, last seven days, and use the configured `SESSION_COOKIE_NAME` (default `fb_session`) with `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
-- Login is limited to five failed attempts per email-and-IP key in a 15-minute window. The limiter is in memory, resets on restart, and is not shared by multiple instances.
+- Login is limited to five failed attempts per hashed email-and-IP key in a 15-minute window. Invite, AI, and export limits are stored in PostgreSQL and shared across instances.
 
 ## Member management
 
@@ -217,7 +217,7 @@ GitHub Actions runs lint, TypeScript, the full test suite, and a production buil
 ## Database backups and known limitations
 
 - Back up PostgreSQL with `pg_dump` before schema changes or data imports. Restore into a separate database first, verify the restored app and health endpoint, then switch the service connection if needed. Keep the dump encrypted and access-controlled.
-- Login rate limits are in-memory, reset when the process restarts, and do not coordinate across instances; use Redis for multi-instance deployments.
+- Rate-limit buckets contain only a hashed key, count, and expiry timestamp; expired buckets are periodically removed.
 - Live updates use polling rather than websockets.
 - An account can belong to only one family at a time.
 - Legacy expense rows without a former-member display-name snapshot cannot recover that historical name automatically.

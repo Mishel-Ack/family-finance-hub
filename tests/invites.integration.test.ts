@@ -87,7 +87,7 @@ beforeEach(async () => {
     "x-forwarded-for": "198.51.100.42",
   });
   configureAuthTests({ cookieHandler: () => undefined });
-  resetInviteRateLimitForTests();
+  await resetInviteRateLimitForTests();
   await makeFamilyOwner();
 });
 
@@ -96,7 +96,7 @@ afterEach(async () => {
   setAuthResolverForTests(undefined);
   setHeadersForTests(undefined);
   configureAuthTests({});
-  resetInviteRateLimitForTests();
+  await resetInviteRateLimitForTests();
   await wipe();
 });
 
@@ -304,7 +304,7 @@ describe("family invite flow", () => {
       statusCode: 404,
     });
 
-    resetInviteRateLimitForTests();
+    await resetInviteRateLimitForTests();
     for (let attempt = 0; attempt < 5; attempt += 1) {
       await expect(acceptInviteFn({ data: { token: "a".repeat(43) } })).rejects.toMatchObject({
         statusCode: 404,
