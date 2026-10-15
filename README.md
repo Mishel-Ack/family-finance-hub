@@ -120,7 +120,7 @@ npx tsc --noEmit
 
 ## Deploy to Render
 
-This project builds with Nitro's `node-server` preset and uses the standard Prisma Client. The health check at `/api/health` returns HTTP 200 when PostgreSQL is reachable and HTTP 503 otherwise.
+This project builds with Nitro's `node-server` preset and uses the standard Prisma Client. `/api/health` returns the build version and latest applied migration; it returns HTTP 503 for an unavailable database, an unfinished migration, or schema drift.
 
 1. Create a Render Blueprint from this repository and review `render.yaml`. It defines the Docker web service, PostgreSQL database, insight cron, and notification cron.
 2. Set `APP_ORIGIN` in the Blueprint prompt to the exact public HTTPS origin. Render generates `JWT_SECRET`; AI is disabled by default.
@@ -131,15 +131,15 @@ For a local production smoke check, build with `npm run build`, set the producti
 
 ## UX, notifications, and offline use
 
-The app supports saved planner scenarios, sinking-fund templates, a shared-spending health trend, recurring expense candidates, and per-user in-app notification preferences. The scheduled notification job is idempotent and can be run with `npm run notifications:run`.
+The app supports saved planner scenarios, sinking-fund templates, goal-feasibility estimates, a shared-spending health trend, and per-user in-app notification preferences. The scheduled notification job emits 80%/100% monthly budget alerts and three-day reminders for confirmed recurring payments. The job is idempotent and can be run with `npm run notifications:run`. Recurring charges detected from shared expenses can be confirmed/dismissed, added manually, and advanced after payment.
 
-The expense form can queue drafts in IndexedDB while offline and sync them when connectivity returns. The queue is scoped to the active user and family, is stored locally without encryption, and uses an idempotency key to avoid duplicate expenses after retries. A pending-sync badge appears in the app shell.
+The expense form can queue drafts in IndexedDB while offline and sync them when connectivity returns. The queue is scoped to the active user and family, is stored locally without encryption, and uses an idempotency key to avoid duplicate expenses after retries. Drafts can be reviewed, retried, or discarded; signing out asks whether to preserve or remove queued drafts.
 
-Use Ctrl+K (or Cmd+K on macOS) to search navigation labels. Light, dark, and system themes are available in Settings. Voice entry uses browser speech recognition when supported; recognized text is passed through the normal expense draft parser and should be reviewed before saving.
+Use Ctrl+K (or Cmd+K on macOS) to search pages, run actions such as adding an expense, and search the caller's visible expense records. Light, dark, and system themes are available in Settings. Voice entry uses browser speech recognition when supported; recognized text is passed through the normal expense draft parser and should be reviewed before saving.
 
 The service worker caches only the offline page, manifest, and icons. It does not cache authenticated responses or provide background expense synchronization.
 
-Additional implementation and operational references are in [docs/architecture.md](./docs/architecture.md), [docs/ml-explained.md](./docs/ml-explained.md), [docs/test-plan.md](./docs/test-plan.md), [docs/deployment.md](./docs/deployment.md), and [docs/demo-script.md](./docs/demo-script.md).
+Additional implementation and operational references are in [docs/architecture.md](./docs/architecture.md), [docs/ml-explained.md](./docs/ml-explained.md), [docs/test-plan.md](./docs/test-plan.md), [docs/deployment.md](./docs/deployment.md), [docs/operations-runbook.md](./docs/operations-runbook.md), and [docs/demo-script.md](./docs/demo-script.md).
 
 ## Splits and settle-up
 
@@ -151,9 +151,9 @@ When a member leaves or is removed, the account is detached and its membership i
 
 ## Planning, insights and monthly story
 
-The What-if Planner runs a deterministic 1,000-run projection from the last six calendar months of **shared** expenses. It supports a savings target and reports when the family has too little history or has not configured income. Forecasts are estimates, not guarantees. Scenarios, sinking funds, and goals are family-scoped; fund contributions are recorded as explicit contribution rows rather than expenses. The monthly set-aside is derived from the remaining target and whole months to the due date.
+The What-if Planner runs a deterministic 1,000-run projection from the last six calendar months of **shared** expenses. It supports a savings target and reports when the family has too little history or has not configured income. Goal feasibility compares planned set-asides with configured monthly income after average shared spending over the last three complete calendar months, and withholds a feasibility result unless all three months have shared expense history. Forecasts are estimates, not guarantees. Scenarios, sinking funds, and goals are family-scoped; fund contributions are recorded as explicit contribution rows rather than expenses. The monthly set-aside is derived from the remaining target and whole months to the due date.
 
-The dashboard Insights panel and the `/story` report use shared expense reads through `src/lib/expense-queries.ts`. Story reports are recomputed on demand by OWNER/ADMIN and stored idempotently per family and month. CSV export offers shared rows or shared rows plus only the caller's own private rows; spreadsheet formula-leading cells are escaped and paise is formatted without floating point math.
+The dashboard Insights panel and the `/story` report use shared expense reads through `src/lib/expense-queries.ts`. Story reports are recomputed on demand by OWNER/ADMIN and stored idempotently per family and month. CSV export supports the selected date range and offers shared rows or shared rows plus only the caller's own private rows; spreadsheet formula-leading cells are escaped and paise is formatted without floating point math. Exports create a privacy-safe family activity entry. Reports can be printed from the Reports page.
 
 ### ML and analytics evaluation
 
@@ -167,11 +167,11 @@ These are deterministic fixture metrics enforced by tests, not production guaran
 | Planner simulation       | 1,000 deterministic runs                                 | Unit test asserts a representative fixture completes in under 200 ms locally.    |
 | Financial health scoring | Partial and complete confidence values are distinguished | Incomplete inputs are reported instead of being silently treated as zero.        |
 
-Run `npm test` to execute these regression checks. Results depend on the fixture and do not indicate that a forecast or anomaly is certain.
+Run `npm test` to execute these regression checks. Results depend on the fixture and do not indicate that a forecast or anomaly is certain. The demo-seed integration test also runs the planning backtest over a deterministic 400-expense sample and reports its MAPE, MAE, and anomaly metrics.
 
 ## Demo seed
 
-Run `npm run seed:demo` against a local development database to create the deterministic Sharma Family demo household. Use `npm run seed:demo -- --large` to add 376 more transactions to the 24 baseline expenses (400 total), spanning six calendar months with repeated merchants and seeded outliers. The script refuses production and remote database targets by default. It creates four accounts (`demo-owner@example.com`, `demo-admin@example.com`, `demo-member@example.com`, and `demo-viewer@example.com`) with one shared password, printed only in non-production. The seed is idempotent; `npm run seed:demo -- --reset` deletes only the deterministic demo family and recreates its records.
+Run `npm run seed:demo` against a local development database to create the deterministic Sharma Family demo household. The seed includes budgets, shared/private expenses, a pending purchase request, notifications, a goal, a contributed sinking fund, a saved scenario, a confirmed recurring charge, and a pre-written Coach example that makes no AI provider calls. Use `npm run seed:demo -- --large` to add 376 more transactions to the 24 baseline expenses (400 total), spanning six calendar months with repeated merchants and seeded outliers. The script refuses production and remote database targets by default. It creates four accounts (`demo-owner@example.com`, `demo-admin@example.com`, `demo-member@example.com`, and `demo-viewer@example.com`) with one shared password, printed only in non-production. The seed is idempotent; `npm run seed:demo -- --reset` deletes only the deterministic demo family and recreates its records.
 
 Remote demo seeding requires both `--force-remote` and `ALLOW_DEMO_SEED=true`; production is always refused. Never use demo accounts or seed data on a production database.
 
@@ -208,6 +208,7 @@ Remote demo seeding requires both `--force-remote` and `ALLOW_DEMO_SEED=true`; p
 | `npm run seed:demo`          | Create the deterministic Sharma Family demo in a local dev database.                    |
 | `npm run insights:recompute` | Recompute and persist insights for all families. Safe to run via cron.                  |
 | `npm run notifications:run`  | Generate and deduplicate notifications for all families. Safe to run every few minutes. |
+| `npm run db:explain`         | Read-only local PostgreSQL `EXPLAIN ANALYZE` measurements for representative reads.     |
 | `npm run ai:smoke`           | Make one tiny Anthropic API call if `ANTHROPIC_API_KEY` is set; exit 0 if not.          |
 
 ## CI
@@ -216,8 +217,8 @@ GitHub Actions runs lint, TypeScript, the full test suite, and a production buil
 
 ## Database backups and known limitations
 
-- Back up PostgreSQL with `pg_dump` before schema changes or data imports. Restore into a separate database first, verify the restored app and health endpoint, then switch the service connection if needed. Keep the dump encrypted and access-controlled.
-- Rate-limit buckets contain only a hashed key, count, and expiry timestamp; expired buckets are periodically removed.
+- Back up PostgreSQL with `pg_dump` before schema changes or data imports. Follow the post-deploy, backup, and rollback steps in [docs/operations-runbook.md](./docs/operations-runbook.md). Restore into a separate database first, verify the restored app and health endpoint, then switch the service connection if needed. Keep the dump encrypted and access-controlled.
+- Rate-limit buckets contain only a hashed key, count, and expiry timestamp; expired buckets are periodically removed. Server error logs contain event, request ID, error type, and status metadata, not exception messages or stacks.
 - Live updates use polling rather than websockets.
 - An account can belong to only one family at a time.
 - Legacy expense rows without a former-member display-name snapshot cannot recover that historical name automatically.

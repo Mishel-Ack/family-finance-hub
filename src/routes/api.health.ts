@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { prisma } from "@/lib/prisma";
 
-const expectedLatestMigration = "20261014140000_coach_scenarios_and_features";
+const expectedLatestMigration = "20261015110000_recurring_schedule_fields";
 
 export async function getHealthResponse() {
   const candidateVersion = process.env["RENDER_GIT_COMMIT"];

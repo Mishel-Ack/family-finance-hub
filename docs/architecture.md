@@ -16,7 +16,8 @@ The application uses integer paise for storage and calculation. Do not introduce
 
 - Shared expenses are visible to authorized family members. A private expense is visible only to its creator.
 - Shared analytics, health scores, recurring detection, planner history, and exports use shared expenses. Export can optionally include only the current user's private expenses.
-- Conversation history for the AI Coach is per user, and saved planner scenarios and recurring records are scoped by family.
+- Conversation history for the AI Coach is per user, and saved planner scenarios and recurring schedules are scoped by family. Recurring notifications are sent only for family-confirmed schedules.
+- Export activity records the requested date range but never records whether private rows were included or copies expense contents into the family activity feed.
 - Family membership is re-resolved on each server request, so removal revokes access without waiting for the session cookie to expire.
 
 ## Persistence and scheduled work
@@ -29,4 +30,4 @@ Prisma migrations are deployed before the web service starts. Render cron servic
 
 ## Runtime protections
 
-The Docker image runs as the built-in non-root `node` user and probes `/api/health`. Authenticated responses are never cached by the service worker. Login, invite, AI, and export limits use atomic PostgreSQL counters shared across replicas. Raw user/IP keys are hashed before storage; expired buckets are periodically removed.
+The Docker image runs as the built-in non-root `node` user and probes `/api/health`, which reports build version and migration status. Authenticated responses are never cached by the service worker. Login, invite, AI, and export limits use atomic PostgreSQL counters shared across replicas. Raw user/IP keys are hashed before storage; expired buckets are periodically removed. Structured server logs include a server-generated request ID and safe error metadata only.

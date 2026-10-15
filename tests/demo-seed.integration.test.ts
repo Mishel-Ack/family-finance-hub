@@ -66,6 +66,31 @@ describe("demo seed integration", () => {
     expect(second).toEqual(first);
     expect(second.familyId).toBe(DEMO_FAMILY_ID);
     expect(second.counts.expenses).toBe(400);
+    expect(second.counts).toMatchObject({
+      goals: 1,
+      sinkingFunds: 1,
+      fundContributions: 1,
+      scenarios: 1,
+      incomeProfiles: 1,
+      purchaseRequests: 1,
+      notifications: 2,
+      coachMessages: 1,
+    });
+    expect(
+      await prisma.purchaseRequest.findFirst({
+        where: { familyId: second.familyId, status: "PENDING" },
+        select: { title: true },
+      }),
+    ).toEqual({ title: "School tablet" });
+    expect(
+      await prisma.coachMessage.findFirst({
+        where: { conversation: { familyId: second.familyId } },
+        select: { content: true, sources: true },
+      }),
+    ).toMatchObject({
+      content: expect.stringContaining("seeded sample"),
+      sources: [{ kind: "demo_fixture" }],
+    });
     const seedRows = await prisma.expense.findMany({
       where: { familyId: second.familyId, visibility: "SHARED" },
       select: { id: true, categoryId: true, description: true, amountPaise: true, date: true },

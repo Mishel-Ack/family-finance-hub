@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Printer } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -21,6 +22,7 @@ import { MonthSelector } from "@/components/common/MonthSelector";
 import { CardSkeletons, EmptyState, ErrorState } from "@/components/common/States";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/auth-context";
 import { getMonthlySummary, getYearlyTrend } from "@/services/report";
 import { CATEGORY_COLORS, MONTHS } from "@/lib/constants";
@@ -95,26 +97,35 @@ function ReportsPage() {
         title="Reports"
         description="Understand your family's spending patterns."
         actions={
-          <MonthSelector
-            month={month}
-            year={year}
-            onChange={(m, y) => {
-              setMonth(m);
-              setYear(y);
-            }}
-          />
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <MonthSelector
+              month={month}
+              year={year}
+              onChange={(m, y) => {
+                setMonth(m);
+                setYear(y);
+              }}
+            />
+            <Button variant="outline" onClick={() => window.print()} aria-label="Print this report">
+              <Printer className="mr-2 h-4 w-4" aria-hidden />
+              Print report
+            </Button>
+          </div>
         }
       />
-      <MemberFilter
-        members={membersQuery.data ?? []}
-        value={memberId}
-        selectedFormerName={
-          summaryQuery.data?.spendingByMember.find((item) => item.memberId === memberId)?.memberName
-        }
-        onChange={(nextId) =>
-          void navigate({ search: (previous) => ({ ...previous, memberId: nextId }) })
-        }
-      />
+      <div className="print:hidden">
+        <MemberFilter
+          members={membersQuery.data ?? []}
+          value={memberId}
+          selectedFormerName={
+            summaryQuery.data?.spendingByMember.find((item) => item.memberId === memberId)
+              ?.memberName
+          }
+          onChange={(nextId) =>
+            void navigate({ search: (previous) => ({ ...previous, memberId: nextId }) })
+          }
+        />
+      </div>
       <p className="text-sm text-muted-foreground">Excludes private expenses.</p>
 
       {summaryQuery.isLoading ? <CardSkeletons count={2} /> : null}

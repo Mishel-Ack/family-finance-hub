@@ -1,5 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Download, Pencil, Plus, Search, Trash2 } from "lucide-react";
@@ -58,6 +59,13 @@ import { SmartAddDialog } from "@/components/expenses/SmartAddDialog";
 import { exportExpenses } from "@/services/export";
 
 export const Route = createFileRoute("/_authenticated/expenses")({
+  validateSearch: (search: Record<string, unknown>) =>
+    z
+      .object({
+        q: z.string().trim().max(80).optional(),
+        add: z.preprocess((value) => value === true || value === "true", z.boolean().optional()),
+      })
+      .parse(search),
   head: () => ({
     meta: [
       { title: "Expenses · FamilyBudget" },
@@ -77,6 +85,8 @@ export const Route = createFileRoute("/_authenticated/expenses")({
 
 function ExpensesPage() {
   const { family, user, canEdit } = useAuth();
+  const routeSearch = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
@@ -125,8 +135,8 @@ function ExpensesPage() {
       typeof document !== "undefined" && document.visibilityState === "visible" ? 30_000 : false,
   });
 
-  const categoryOptions = categoriesQuery.data ?? [];
-  const memberOptions = membersQuery.data ?? [];
+  const categoryOptions = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
+  const memberOptions = useMemo(() => membersQuery.data ?? [], [membersQuery.data]);
 
   const rows = useMemo(() => {
     let list = query.data ?? [];
@@ -163,16 +173,24 @@ function ExpensesPage() {
 
   const exportCsv = async (includePrivate: boolean) => {
     try {
-      const { csv } = await exportExpenses(includePrivate);
+      const { csv } = await exportExpenses(includePrivate, {
+        ...(from ? { from } : {}),
+        ...(to ? { to } : {}),
+      });
       const blob = new Blob([csv], {
         type: "text/csv;charset=utf-8",
       });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = includePrivate
-        ? "familybudget-shared-and-my-private.csv"
-        : "familybudget-shared.csv";
+      link.download = [
+        "familybudget",
+        includePrivate ? "shared-and-my-private" : "shared",
+        from || to ? `${from || "start"}-to-${to || "today"}` : undefined,
+      ]
+        .filter(Boolean)
+        .join("-")
+        .concat(".csv");
       link.click();
       URL.revokeObjectURL(url);
       toast.success("CSV export downloaded");
@@ -277,7 +295,7 @@ function ExpensesPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const openCreate = () => {
+  const openCreate = useCallback(() => {
     setEditId(null);
     setForm({
       amount: "",
@@ -298,7 +316,18 @@ function ExpensesPage() {
     );
     setSplitValues({});
     setOpen(true);
-  };
+  }, [categoryOptions, memberOptions]);
+
+  useEffect(() => {
+    setSearch(routeSearch.q ?? "");
+    if (routeSearch.add) {
+      openCreate();
+      void navigate({
+        search: (previous) => ({ ...previous, add: undefined }),
+        replace: true,
+      });
+    }
+  }, [navigate, openCreate, routeSearch.add, routeSearch.q]);
 
   const openEdit = (expense: Expense) => {
     setEditId(expense.id);

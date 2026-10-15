@@ -92,3 +92,34 @@ export async function removeQueuedExpense(key: string) {
   database.close();
   notifyQueueChanged();
 }
+
+export async function clearQueuedExpenses(familyId: string, userId: string) {
+  const database = await openDatabase();
+  let removed: number;
+  try {
+    removed = await new Promise<number>((resolve, reject) => {
+      const transaction = database.transaction(storeName, "readwrite");
+      const store = transaction.objectStore(storeName);
+      const request = store.getAll();
+      let removedCount = 0;
+      request.onsuccess = () => {
+        for (const record of request.result as PendingExpense[]) {
+          if (record.familyId !== familyId || record.userId !== userId) continue;
+          store.delete(record.key);
+          removedCount++;
+        }
+      };
+      request.onerror = () =>
+        reject(request.error ?? new Error("Could not review offline expenses for deletion."));
+      transaction.oncomplete = () => resolve(removedCount);
+      transaction.onerror = () =>
+        reject(transaction.error ?? new Error("Could not discard queued offline expenses."));
+      transaction.onabort = () =>
+        reject(transaction.error ?? new Error("Offline expense queue update was interrupted."));
+    });
+  } finally {
+    database.close();
+  }
+  if (removed) notifyQueueChanged();
+  return removed;
+}

@@ -15,7 +15,7 @@ describe("health endpoint", () => {
   it("reports the app version and current migration status", async () => {
     queryRaw.mockResolvedValueOnce([
       {
-        latestApplied: "20261014140000_coach_scenarios_and_features",
+        latestApplied: "20261015110000_recurring_schedule_fields",
         unfinishedMigrations: 0,
       },
     ]);
@@ -33,7 +33,7 @@ describe("health endpoint", () => {
   it("returns degraded status when migrations are unfinished", async () => {
     queryRaw.mockResolvedValueOnce([
       {
-        latestApplied: "20261014140000_coach_scenarios_and_features",
+        latestApplied: "20261015110000_recurring_schedule_fields",
         unfinishedMigrations: 1,
       },
     ]);

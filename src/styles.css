@@ -4,6 +4,25 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@page {
+  margin: 12mm;
+}
+
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  .recharts-wrapper {
+    break-inside: avoid;
+  }
+}
+
 /*
  * Design system definition.
  *

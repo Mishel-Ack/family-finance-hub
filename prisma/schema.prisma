@@ -615,16 +615,20 @@ model Scenario {
 }
 
 model RecurringPatternRecord {
-  id          String   @id @default(uuid())
-  familyId    String
-  family      Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
-  merchantKey String
-  status      String   @default("CONFIRMED")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                 String    @id @default(uuid())
+  familyId           String
+  family             Family    @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  merchantKey        String
+  status             String    @default("DETECTED")
+  intervalDays       Int?
+  nextExpectedAt     DateTime? @db.Date
+  typicalAmountPaise Int?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   @@unique([familyId, merchantKey])
   @@index([familyId])
+  @@index([familyId, status, nextExpectedAt])
 }
 
 model RateLimitBucket {

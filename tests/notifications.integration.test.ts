@@ -26,6 +26,11 @@ import {
   updateNotificationPreferenceFn,
 } from "@/services/notifications";
 import { listRecurringSubscriptionsFn } from "@/services/subscriptions";
+import {
+  advanceRecurringSubscriptionFn,
+  createManualRecurringSubscriptionFn,
+  updateRecurringSubscriptionStatusFn,
+} from "@/services/subscriptions";
 
 describe("notifications and recurring subscriptions", () => {
   const suffix = crypto.randomUUID();
@@ -142,6 +147,51 @@ describe("notifications and recurring subscriptions", () => {
     const patterns = await listRecurringSubscriptionsFn({ data: undefined });
     expect(patterns.map((pattern) => pattern.merchant)).toEqual(["gym monthly"]);
     expect(patterns[0]?.typicalAmountPaise).toBe(2_500);
+
+    const pattern = patterns[0]!;
+    await updateRecurringSubscriptionStatusFn({
+      data: {
+        merchant: pattern.merchant,
+        status: "CONFIRMED",
+        intervalDays: pattern.intervalDays,
+        nextExpectedDate: pattern.nextExpectedDate,
+        typicalAmountPaise: pattern.typicalAmountPaise,
+      },
+    });
+    expect((await listRecurringSubscriptionsFn({ data: undefined }))[0]?.status).toBe("CONFIRMED");
+    await updateRecurringSubscriptionStatusFn({
+      data: { merchant: pattern.merchant, status: "DISMISSED" },
+    });
+    expect((await listRecurringSubscriptionsFn({ data: undefined }))[0]?.status).toBe("DISMISSED");
+  });
+
+  it("supports manually scheduled recurring payments and advancing the next date", async () => {
+    const nextDay = new Date();
+    nextDay.setUTCHours(0, 0, 0, 0);
+    nextDay.setUTCDate(nextDay.getUTCDate() + 2);
+    const nextExpectedDate = nextDay.toISOString().slice(0, 10);
+    await createManualRecurringSubscriptionFn({
+      data: {
+        merchant: "Water Filter Service",
+        intervalDays: 30,
+        nextExpectedDate,
+        typicalAmountPaise: 12_500,
+      },
+    });
+
+    const patterns = await listRecurringSubscriptionsFn({ data: undefined });
+    const manualPattern = patterns.find((pattern) => pattern.merchant === "water filter service");
+    expect(manualPattern).toMatchObject({
+      status: "CONFIRMED",
+      intervalDays: 30,
+      nextExpectedDate,
+      typicalAmountPaise: 12_500,
+    });
+    await advanceRecurringSubscriptionFn({ data: "Water Filter Service" });
+    const advanced = await listRecurringSubscriptionsFn({ data: undefined });
+    expect(
+      advanced.find((pattern) => pattern.merchant === "water filter service")?.nextExpectedDate,
+    ).toBe(new Date(nextDay.getTime() + 30 * 86400000).toISOString().slice(0, 10));
   });
 
   afterAll(async () => {

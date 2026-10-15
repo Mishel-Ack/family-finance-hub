@@ -19,6 +19,7 @@ import {
   findExpenseByClientRequestId,
   findSharedExpenseWithSplits,
   listVisibleExpenses,
+  searchVisibleExpenses,
   listableWhere,
 } from "@/lib/expense-queries";
 import { recordActivity, redactExpenseActivity } from "@/lib/activity-queries";
@@ -30,7 +31,7 @@ import {
   listQueuedExpenses,
   removeQueuedExpense,
 } from "@/lib/offline-expense-queue";
-import type { z } from "zod";
+import { z } from "zod";
 import type { splitInputSchema } from "@/lib/validations";
 
 type SplitInput = z.infer<typeof splitInputSchema>;
@@ -195,7 +196,6 @@ export const listExpensesFn = createServerFn({ method: "GET" })
       ...(data?.to ? { to: data.to } : {}),
       ...(data?.visibility ? { mode: data.visibility } : {}),
     });
-
     return items.map(
       (e) =>
         ({
@@ -232,6 +232,21 @@ export const listExpensesFn = createServerFn({ method: "GET" })
           })),
         }) as Expense,
     );
+  });
+
+export const searchExpensesForCommandFn = createServerFn({ method: "GET" })
+  .validator(z.string().trim().min(2).max(80))
+  .handler(async ({ data: term }) => {
+    const auth = await requireMember("readAll");
+    const results = await searchVisibleExpenses(prisma, auth, term);
+    return results.map((expense) => ({
+      id: expense.id,
+      date: expense.date.toISOString().slice(0, 10),
+      description: expense.description,
+      category: expense.category.name,
+      amountPaise: expense.amountPaise,
+      visibility: expense.visibility,
+    }));
   });
 
 export const createExpenseFn = createServerFn({ method: "POST" })
@@ -479,6 +494,10 @@ export function listExpenses(
   visibility: "VISIBLE" | "SHARED" | "PRIVATE" = "VISIBLE",
 ) {
   return listExpensesFn({ data: { from, to, visibility } });
+}
+
+export function searchExpensesForCommand(term: string) {
+  return searchExpensesForCommandFn({ data: term });
 }
 
 export async function createExpense(

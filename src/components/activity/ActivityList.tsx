@@ -5,6 +5,7 @@ import {
   ClipboardList,
   FolderClosed,
   ReceiptIndianRupee,
+  Download,
   Sparkles,
   UserMinus,
   UserPlus,
@@ -38,6 +39,7 @@ const icons: Record<ActivityItem["type"], LucideIcon> = {
   SETTLEMENT_DELETED: Banknote,
   SCENARIO_CREATED: Sparkles,
   SCENARIO_DELETED: Sparkles,
+  EXPORT_PERFORMED: Download,
 };
 
 function sentence(item: ActivityItem): string {
@@ -88,6 +90,8 @@ function sentence(item: ActivityItem): string {
       return `${item.actorName} saved the “${item.summary.name}” planner scenario`;
     case "SCENARIO_DELETED":
       return `${item.actorName} deleted the “${item.summary.name}” planner scenario`;
+    case "EXPORT_PERFORMED":
+      return `${item.actorName} downloaded a family expense report${item.summary.from || item.summary.to ? ` (${item.summary.from ?? "all dates"} to ${item.summary.to ?? "today"})` : ""}`;
   }
 }
 

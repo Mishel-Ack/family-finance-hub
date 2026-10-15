@@ -29,6 +29,7 @@
 - Voice recognition depends on browser/device support; transcripts still pass through the normal parser and should be reviewed.
 - No additional Prisma migrations were needed in this completion pass: the required scenario, recurring-pattern, notification, and client-request-id schema was already present.
 - The Docker image could not be built in this environment because Docker Desktop's engine was unavailable. The Dockerfile and Render configuration were reviewed and formatted.
+- The later detailed-mission continuation adds a reviewed migration for confirmed recurring schedules (`intervalDays`, `nextExpectedAt`, and `typicalAmountPaise`); it has been applied to the local development and test databases.
 
 ## Final quality gate
 
@@ -52,10 +53,15 @@
 - [x] Replaced in-memory login, invite, AI, and export rate limits with atomic PostgreSQL updates; reused the already-migrated `RateLimitBucket` model, hashed identifiers, injectable test clock, concurrent-attempt coverage, and periodic cleanup.
 - [x] Added server-generated request IDs, structured error metadata without exception messages/stacks, client error-reporting sanitization, and version/migration metadata in `/api/health`.
 - [x] Verified the hardening slice: 22 focused tests, TypeScript, and ESLint pass.
-- [ ] Add budget-threshold and upcoming recurring-payment notifications, including recurring charge confirm/dismiss/manual management.
-- [ ] Complete export date ranges, export activity records, and a print-friendly report.
-- [ ] Expand command-palette actions and scoped expense search; improve offline queue retry/discard/sign-out behavior and accessibility.
-- [ ] Review planner goal-feasibility gaps and make the simulation assumptions explicit and accurate.
-- [ ] Expand deterministic demo fixtures and record performance/query-plan evaluations.
-- [ ] Add operational post-deploy, backup, and rollback guidance; finish `FINAL_REPORT.md`.
-- [ ] Run the full test suite twice, TypeScript, lint, production build, and production dependency audit; commit and push the verified changes.
+- [x] Add budget-threshold and upcoming recurring-payment notifications, including recurring charge confirm/dismiss/manual management.
+- [x] Complete export date ranges, privacy-safe export activity records, and a print-friendly report.
+- [x] Expand command-palette actions and family/user-scoped expense search; add offline queue review, retry/discard, and preserve-or-discard sign-out choices.
+- [x] Make goal-feasibility assumptions explicit; require shared spending in all three complete months before estimating savings capacity.
+- [x] Expand deterministic demo fixtures and add a local-only read-only `EXPLAIN ANALYZE` tool.
+- [x] Add operational post-deploy, backup, and rollback guidance; complete `FINAL_REPORT.md`.
+- [x] Run the full 158-test suite twice, TypeScript, ESLint, Prisma generate/validate/migrate checks, production build, production dependency audit, and formatting checks.
+- [ ] Commit the verified changes and attempt the explicitly requested GitHub push.
+
+### Measured query-plan sample
+
+On the local PostgreSQL test database with the 400-expense demo seed, `npm run db:explain` measured 0.382 ms for the shared-expense query (100 rows returned), 0.120 ms for the recent-activity query (21 rows), and 0.035 ms for unread notifications (2 rows). The expense query used an index scan; the 33-row activity and 2-row notification tables used sequential scans. This is a small local fixture, not a production performance guarantee.

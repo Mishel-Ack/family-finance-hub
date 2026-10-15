@@ -403,6 +403,199 @@ export async function seedDemo(args = process.argv.slice(2)) {
     },
   });
 
+  const sinkingFundId = stableId("fund:family-trip");
+  const fund = await prisma.sinkingFund.upsert({
+    where: { id: sinkingFundId },
+    create: {
+      id: sinkingFundId,
+      familyId: family.id,
+      name: "Family trip",
+      targetPaise: toPaise(120000),
+      dueDate: new Date(now.getTime() + 180 * 86400000),
+      createdByMemberId: familyMembers[0]!.id,
+    },
+    update: {
+      familyId: family.id,
+      name: "Family trip",
+      targetPaise: toPaise(120000),
+      dueDate: new Date(now.getTime() + 180 * 86400000),
+    },
+  });
+  const contributionId = stableId("fund-contribution:family-trip");
+  await prisma.fundContribution.upsert({
+    where: { id: contributionId },
+    create: {
+      id: contributionId,
+      familyId: family.id,
+      fundId: fund.id,
+      memberId: familyMembers[0]!.id,
+      amountPaise: toPaise(15000),
+    },
+    update: {
+      familyId: family.id,
+      fundId: fund.id,
+      memberId: familyMembers[0]!.id,
+      amountPaise: toPaise(15000),
+    },
+  });
+
+  const goalId = stableId("goal:emergency-savings");
+  await prisma.goal.upsert({
+    where: { id: goalId },
+    create: {
+      id: goalId,
+      familyId: family.id,
+      name: "Emergency savings",
+      targetPaise: toPaise(200000),
+      targetDate: new Date(now.getTime() + 365 * 86400000),
+      createdByMemberId: familyMembers[0]!.id,
+    },
+    update: {
+      familyId: family.id,
+      name: "Emergency savings",
+      targetPaise: toPaise(200000),
+      targetDate: new Date(now.getTime() + 365 * 86400000),
+    },
+  });
+  await prisma.incomeProfile.upsert({
+    where: { familyId: family.id },
+    create: { familyId: family.id, monthlyIncomePaise: toPaise(150000) },
+    update: { monthlyIncomePaise: toPaise(150000) },
+  });
+
+  const scenarioId = stableId("scenario:groceries");
+  const scenarioDefinition = [
+    {
+      type: "REDUCE_CATEGORY",
+      categoryId: categoryByKey.get("groceries")!.id,
+      percent: 10,
+    },
+  ] satisfies Prisma.InputJsonValue;
+  await prisma.scenario.upsert({
+    where: { id: scenarioId },
+    create: {
+      id: scenarioId,
+      familyId: family.id,
+      createdByMemberId: familyMembers[0]!.id,
+      nameSnapshot: familyMembers[0]!.displayName,
+      name: "Reduce grocery spend by 10%",
+      definition: scenarioDefinition,
+    },
+    update: {
+      familyId: family.id,
+      name: "Reduce grocery spend by 10%",
+      definition: scenarioDefinition,
+    },
+  });
+
+  const requestId = stableId("purchase-request:school-tablet");
+  const impactSnapshot = {
+    totalBudgetRemainingPaise: toPaise(95000),
+    categoryBudgetRemainingPaise: toPaise(15000),
+    privateExpensesExcluded: true,
+  } satisfies Prisma.InputJsonValue;
+  await prisma.purchaseRequest.upsert({
+    where: { id: requestId },
+    create: {
+      id: requestId,
+      familyId: family.id,
+      requesterMemberId: familyMembers[2]!.id,
+      title: "School tablet",
+      amountPaise: toPaise(18000),
+      categoryId: categoryByKey.get("school")!.id,
+      note: "Shared device for school assignments.",
+      neededBy: new Date(now.getTime() + 14 * 86400000),
+      status: "PENDING",
+      impactSnapshot,
+    },
+    update: {
+      familyId: family.id,
+      requesterMemberId: familyMembers[2]!.id,
+      title: "School tablet",
+      amountPaise: toPaise(18000),
+      categoryId: categoryByKey.get("school")!.id,
+      note: "Shared device for school assignments.",
+      neededBy: new Date(now.getTime() + 14 * 86400000),
+      status: "PENDING",
+      impactSnapshot,
+    },
+  });
+
+  const reminderDate = new Date(now.getTime() + 5 * 86400000);
+  await prisma.recurringPatternRecord.upsert({
+    where: { familyId_merchantKey: { familyId: family.id, merchantKey: "netflix" } },
+    create: {
+      familyId: family.id,
+      merchantKey: "netflix",
+      status: "CONFIRMED",
+      intervalDays: 30,
+      nextExpectedAt: reminderDate,
+      typicalAmountPaise: toPaise(799),
+    },
+    update: {
+      status: "CONFIRMED",
+      intervalDays: 30,
+      nextExpectedAt: reminderDate,
+      typicalAmountPaise: toPaise(799),
+    },
+  });
+
+  const conversationId = stableId("coach:demo-conversation");
+  await prisma.coachConversation.upsert({
+    where: { id: conversationId },
+    create: {
+      id: conversationId,
+      familyId: family.id,
+      userId: users[0]!.id,
+      title: "Grounded money question example",
+    },
+    update: { familyId: family.id, userId: users[0]!.id },
+  });
+  const coachMessageId = stableId("coach:demo-assistant-message");
+  await prisma.coachMessage.upsert({
+    where: { id: coachMessageId },
+    create: {
+      id: coachMessageId,
+      conversationId,
+      role: "ASSISTANT",
+      content: "Your shared spending was highest in groceries in the seeded sample.",
+      sources: [{ label: "Shared category totals", kind: "demo_fixture" }],
+    },
+    update: {
+      conversationId,
+      role: "ASSISTANT",
+      content: "Your shared spending was highest in groceries in the seeded sample.",
+      sources: [{ label: "Shared category totals", kind: "demo_fixture" }],
+    },
+  });
+  await prisma.notification.createMany({
+    data: [
+      {
+        id: stableId("notification:demo-budget"),
+        familyId: family.id,
+        userId: users[0]!.id,
+        type: "BUDGET_ALERT",
+        title: "Monthly budget at 80%",
+        body: "Shared family spending has reached the demo alert threshold.",
+        entityType: "BUDGET",
+        entityId: monthKeys.at(-1)?.id ?? null,
+        dedupeKey: "demo:budget-alert",
+      },
+      {
+        id: stableId("notification:demo-purchase"),
+        familyId: family.id,
+        userId: users[0]!.id,
+        type: "PURCHASE_REQUEST",
+        title: "A purchase needs review",
+        body: "The school tablet request is waiting for a decision.",
+        entityType: "PURCHASE_REQUEST",
+        entityId: requestId,
+        dedupeKey: "demo:purchase-request",
+      },
+    ],
+    skipDuplicates: true,
+  });
+
   await prisma.$transaction(async (tx) => {
     const activities = [
       ...expenseIds.flatMap((expenseId, index) => {
@@ -472,6 +665,14 @@ export async function seedDemo(args = process.argv.slice(2)) {
     splits: await prisma.expenseSplit.count({ where: { expense: { familyId: family.id } } }),
     settlements: await prisma.settlement.count({ where: { familyId: family.id } }),
     activities: await prisma.activityLog.count({ where: { familyId: family.id } }),
+    goals: await prisma.goal.count({ where: { familyId: family.id, archivedAt: null } }),
+    sinkingFunds: await prisma.sinkingFund.count({ where: { familyId: family.id } }),
+    fundContributions: await prisma.fundContribution.count({ where: { familyId: family.id } }),
+    scenarios: await prisma.scenario.count({ where: { familyId: family.id } }),
+    incomeProfiles: await prisma.incomeProfile.count({ where: { familyId: family.id } }),
+    purchaseRequests: await prisma.purchaseRequest.count({ where: { familyId: family.id } }),
+    notifications: await prisma.notification.count({ where: { familyId: family.id } }),
+    coachMessages: await prisma.coachMessage.count({ where: { conversationId } }),
   };
   if (process.env["NODE_ENV"] !== "production") {
     console.info(`Demo accounts use password: ${DEMO_PASSWORD}`);

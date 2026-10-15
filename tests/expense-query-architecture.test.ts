@@ -121,6 +121,7 @@ describe("expense query choke point", () => {
             "services/planner.ts",
             "services/financial-health.ts",
             "services/notification-jobs.ts",
+            "services/planning-assets.ts",
           ].includes(relative(srcRoot, path).replaceAll("\\", "/")),
       )
       .flatMap((path) => {

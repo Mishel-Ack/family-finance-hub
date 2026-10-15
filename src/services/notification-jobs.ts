@@ -2,7 +2,9 @@ import type { Prisma } from "@prisma/client";
 import { createInAppNotifications } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import { listRecentNotificationActivity } from "@/lib/activity-queries";
+import { sumSharedExpenseAmounts } from "@/lib/expense-queries";
 import { recomputeInsights } from "@/services/insights";
+import { getConfirmedRecurringSchedules } from "@/services/subscriptions";
 
 function insightNotification(type: string): {
   type: "RECURRING_REMINDER" | "ANOMALY" | "INSIGHT";
@@ -38,6 +40,18 @@ function monthsBetween(from: Date, to: Date) {
   return (to.getUTCFullYear() - from.getUTCFullYear()) * 12 + to.getUTCMonth() - from.getUTCMonth();
 }
 
+export function budgetAlertThresholds(spentPaise: number, budgetPaise: number) {
+  if (budgetPaise <= 0) return [];
+  return [80, 100].filter((threshold) => spentPaise * 100 >= budgetPaise * threshold);
+}
+
+export function daysUntilRecurringReminder(expectedAt: Date, now: Date) {
+  const utcDay = (date: Date) =>
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  const days = Math.round((utcDay(expectedAt) - utcDay(now)) / 86400000);
+  return days >= 0 && days <= 3 ? days : null;
+}
+
 export async function runNotificationJobs() {
   const families = await prisma.family.findMany({ select: { id: true } });
   const generatedAt = new Date();
@@ -46,34 +60,90 @@ export async function runNotificationJobs() {
 
   for (const { id: familyId } of families) {
     await recomputeInsights(familyId);
-    const [members, insights, reports, funds, activities] = await Promise.all([
-      prisma.familyMember.findMany({
-        where: { familyId, userId: { not: null } },
-        select: { userId: true },
-      }),
-      prisma.insight.findMany({
-        where: { familyId, dismissedAt: null },
-        select: { id: true, type: true, key: true, payload: true },
-      }),
-      prisma.monthlyReport.findMany({
-        where: { familyId, generatedAt: { gte: recentSince } },
-        select: { month: true, year: true },
-      }),
-      prisma.sinkingFund.findMany({
-        where: {
-          familyId,
-          archivedAt: null,
-          dueDate: { lte: new Date(generatedAt.getTime() + 60 * 86400000) },
-        },
-        include: {
-          contributions: { where: { familyId }, select: { amountPaise: true } },
-        },
-      }),
-      listRecentNotificationActivity(familyId, recentSince),
-    ]);
+    const currentMonthStart = new Date(
+      Date.UTC(generatedAt.getUTCFullYear(), generatedAt.getUTCMonth(), 1),
+    );
+    const nextMonthStart = new Date(
+      Date.UTC(generatedAt.getUTCFullYear(), generatedAt.getUTCMonth() + 1, 1),
+    );
+    const budgetMonthKey = monthKey(generatedAt);
+    const [members, insights, reports, funds, activities, budget, currentMonthSpending, recurring] =
+      await Promise.all([
+        prisma.familyMember.findMany({
+          where: { familyId, userId: { not: null } },
+          select: { userId: true },
+        }),
+        prisma.insight.findMany({
+          where: { familyId, dismissedAt: null },
+          select: { id: true, type: true, key: true, payload: true },
+        }),
+        prisma.monthlyReport.findMany({
+          where: { familyId, generatedAt: { gte: recentSince } },
+          select: { month: true, year: true },
+        }),
+        prisma.sinkingFund.findMany({
+          where: {
+            familyId,
+            archivedAt: null,
+            dueDate: { lte: new Date(generatedAt.getTime() + 60 * 86400000) },
+          },
+          include: {
+            contributions: { where: { familyId }, select: { amountPaise: true } },
+          },
+        }),
+        listRecentNotificationActivity(familyId, recentSince),
+        prisma.budget.findUnique({
+          where: {
+            familyId_month_year: {
+              familyId,
+              month: generatedAt.getUTCMonth() + 1,
+              year: generatedAt.getUTCFullYear(),
+            },
+          },
+          select: { id: true, totalLimitPaise: true },
+        }),
+        sumSharedExpenseAmounts(prisma, familyId, currentMonthStart, nextMonthStart),
+        getConfirmedRecurringSchedules(familyId),
+      ]);
     const userIds = [...new Set(members.flatMap(({ userId }) => (userId ? [userId] : [])))];
     if (!userIds.length) continue;
 
+    const spentPaise = currentMonthSpending;
+    if (budget) {
+      for (const threshold of budgetAlertThresholds(spentPaise, budget.totalLimitPaise)) {
+        await createInAppNotifications(prisma, {
+          familyId,
+          userIds,
+          type: "BUDGET_ALERT",
+          title: threshold === 100 ? "Monthly budget reached" : "Monthly budget at 80%",
+          body: `Shared spending has used ${Math.round((spentPaise / budget.totalLimitPaise) * 100)}% of this month's budget.`,
+          entityType: "BUDGET",
+          entityId: budget.id,
+          dedupeKey: `budget-alert:${budgetMonthKey}:${threshold}`,
+        });
+        generated++;
+      }
+    }
+
+    for (const subscription of recurring) {
+      if (!subscription.nextExpectedAt) continue;
+      const daysUntil = daysUntilRecurringReminder(subscription.nextExpectedAt, generatedAt);
+      if (daysUntil === null) continue;
+      const date = subscription.nextExpectedAt.toISOString().slice(0, 10);
+      const amount = subscription.typicalAmountPaise
+        ? ` About ₹${(subscription.typicalAmountPaise / 100).toFixed(2)} is expected.`
+        : "";
+      await createInAppNotifications(prisma, {
+        familyId,
+        userIds,
+        type: "RECURRING_REMINDER",
+        title: `Upcoming recurring payment: ${subscription.merchantKey}`,
+        body: `Expected ${daysUntil === 0 ? "today" : `in ${daysUntil} day${daysUntil === 1 ? "" : "s"}`}.${amount}`,
+        entityType: "RECURRING_PATTERN",
+        dedupeKey: `recurring-reminder:${subscription.merchantKey}:${date}`,
+      });
+      generated++;
+    }
     for (const insight of insights) {
       const notification = insightNotification(insight.type);
       await createInAppNotifications(prisma, {
