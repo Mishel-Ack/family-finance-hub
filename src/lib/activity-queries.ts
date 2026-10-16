@@ -152,10 +152,32 @@ const ActivityEntrySchema = z.discriminatedUnion("type", [
     entityId: z.string().nullable(),
     summary: z.object({ amountPaise: paiseSchema }),
   }),
+  z.object({
+    type: z.literal("SCENARIO_CREATED"),
+    entityType: z.literal("SCENARIO"),
+    entityId: z.string(),
+    summary: z.object({ name: shortTextSchema }),
+  }),
+  z.object({
+    type: z.literal("SCENARIO_DELETED"),
+    entityType: z.literal("SCENARIO"),
+    entityId: z.string(),
+    summary: z.object({ name: shortTextSchema }),
+  }),
+  z.object({
+    type: z.literal("EXPORT_PERFORMED"),
+    entityType: z.literal("FAMILY"),
+    entityId: z.string(),
+    summary: z.object({
+      from: z.string().nullable(),
+      to: z.string().nullable(),
+    }),
+  }),
 ]);
 
 export type ActivityEntry = z.infer<typeof ActivityEntrySchema>;
-export type ActivityGroup = "EXPENSES" | "BUDGETS" | "CATEGORIES" | "MEMBERS";
+export type ActivityGroup =
+  "EXPENSES" | "BUDGETS" | "CATEGORIES" | "MEMBERS" | "SCENARIOS" | "EXPORTS";
 export type ActivityType = ActivityEntry["type"];
 export type ActivityFilter = ActivityType | ActivityGroup;
 export type ActivityItem = ActivityEntry & {
@@ -175,6 +197,8 @@ export const activityListSchema = z.object({
       "BUDGETS",
       "CATEGORIES",
       "MEMBERS",
+      "SCENARIOS",
+      "EXPORTS",
       "EXPENSE_CREATED",
       "EXPENSE_UPDATED",
       "EXPENSE_DELETED",
@@ -194,10 +218,23 @@ export const activityListSchema = z.object({
       "SPLIT_REMOVED",
       "SETTLEMENT_RECORDED",
       "SETTLEMENT_DELETED",
+      "SCENARIO_CREATED",
+      "SCENARIO_DELETED",
+      "EXPORT_PERFORMED",
     ])
     .optional(),
   entityType: z
-    .enum(["EXPENSE", "BUDGET", "CATEGORY", "MEMBER", "FAMILY", "INVITE", "SPLIT", "SETTLEMENT"])
+    .enum([
+      "EXPENSE",
+      "BUDGET",
+      "CATEGORY",
+      "MEMBER",
+      "FAMILY",
+      "INVITE",
+      "SPLIT",
+      "SETTLEMENT",
+      "SCENARIO",
+    ])
     .optional(),
   entityId: z.string().optional(),
 });
@@ -216,6 +253,8 @@ const groupTypes: Record<ActivityGroup, ActivityType[]> = {
     "MEMBER_ROLE_CHANGED",
     "OWNERSHIP_TRANSFERRED",
   ],
+  SCENARIOS: ["SCENARIO_CREATED", "SCENARIO_DELETED"],
+  EXPORTS: ["EXPORT_PERFORMED"],
 };
 const inviteTypes: ActivityType[] = ["INVITE_CREATED", "INVITE_REVOKED"];
 type ActivityTransaction = Prisma.TransactionClient;
@@ -348,4 +387,15 @@ export async function listActivity(auth: AuthContext, options: z.infer<typeof ac
     nextCursor: hasMore && page.length > 0 ? encodeCursor(page[page.length - 1]!) : null,
     hasMore,
   };
+}
+
+export function listRecentNotificationActivity(familyId: string, since: Date) {
+  return prisma.activityLog.findMany({
+    where: {
+      familyId,
+      createdAt: { gte: since },
+      type: { in: ["MEMBER_JOINED", "SETTLEMENT_RECORDED"] },
+    },
+    select: { id: true, type: true, entityId: true },
+  });
 }

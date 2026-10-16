@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tanstack/react-start", () => ({
+  createServerOnlyFn: <T>(fn: T): T => fn,
   createServerFn: () => {
     let parseInput = (input: unknown) => input;
     const builder = {
@@ -22,6 +23,7 @@ import { setAuthResolverForTests } from "@/lib/authz";
 import { setHeadersForTests } from "@/lib/http-utils";
 import { parseExpenseTextFn } from "@/services/smart-entry";
 import { createExpenseFn } from "@/services/expense";
+import { speechTranscriptFromEvent } from "@/lib/voice-transcript";
 
 describe("draft-only smart entry", () => {
   const suffix = crypto.randomUUID();
@@ -74,6 +76,19 @@ describe("draft-only smart entry", () => {
     const before = await prisma.expense.count({ where: { familyId } });
     expect(() => parseExpenseTextFn({ data: "x".repeat(501) })).toThrow();
     expect(await prisma.expense.count({ where: { familyId } })).toBe(before);
+  });
+
+  it("turns a recognized voice transcript into a normal expense draft", async () => {
+    const transcript = speechTranscriptFromEvent({
+      results: [[{ transcript: "₹450 groceries" }]],
+    });
+    const drafts = await parseExpenseTextFn({ data: transcript });
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]).toMatchObject({
+      amountPaise: 45_000,
+      description: "groceries",
+      visibility: "SHARED",
+    });
   });
 
   it("claims an imported-message fingerprint atomically during expense confirmation", async () => {

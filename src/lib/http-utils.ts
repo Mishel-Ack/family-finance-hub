@@ -1,7 +1,12 @@
+import { createServerOnlyFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 import { httpError } from "@/lib/http-error";
 
 let testHeaders: Record<string, string | undefined> | undefined;
+
+const getRequestHeaderFromServer = createServerOnlyFn((name: string) =>
+  getRequestHeader(name.toLowerCase() as Parameters<typeof getRequestHeader>[0]),
+);
 
 export function setHeadersForTests(headers: Record<string, string | undefined> | undefined) {
   if (process.env["NODE_ENV"] !== "test")
@@ -11,7 +16,7 @@ export function setHeadersForTests(headers: Record<string, string | undefined> |
 
 export function getHeader(name: string): string | undefined {
   if (testHeaders) return testHeaders[name.toLowerCase()];
-  return getRequestHeader(name.toLowerCase() as Parameters<typeof getRequestHeader>[0]);
+  return getRequestHeaderFromServer(name);
 }
 
 export function assertSameOrigin() {
@@ -24,10 +29,11 @@ export function assertSameOrigin() {
   try {
     if (!originHeader) throw new Error("missing Origin");
     const origin = new URL(originHeader).origin;
-    const expected = configuredOrigin
-      ? new URL(configuredOrigin).origin
-      : new URL(`${protocol}://${host}`).origin;
-    if (origin !== expected) throw new Error("origin mismatch");
+    const requestOrigin = host ? new URL(`${protocol}://${host}`).origin : null;
+    const configured = configuredOrigin ? new URL(configuredOrigin).origin : null;
+    const matchesRequest = requestOrigin !== null && origin === requestOrigin;
+    const matchesConfigured = configured !== null && origin === configured;
+    if (!matchesRequest && !matchesConfigured) throw new Error("origin mismatch");
   } catch {
     throw httpError("Request origin is not allowed", 403);
   }

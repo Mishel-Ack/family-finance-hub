@@ -35,12 +35,12 @@ describe("AI infrastructure guards", () => {
 
   afterAll(async () => {
     setAiProviderForTests(undefined);
-    resetAiRateLimitForTests();
+    await resetAiRateLimitForTests();
     if (auth) await prisma.family.deleteMany({ where: { id: auth.familyId } });
     await prisma.user.deleteMany({ where: { email: `ai-${suffix}@example.test` } });
   });
 
-  beforeAll(() => resetAiRateLimitForTests());
+  beforeAll(async () => resetAiRateLimitForTests());
 
   it("blocks families that have not enabled AI and rejects viewers", async () => {
     await prisma.family.update({ where: { id: auth.familyId }, data: { aiEnabled: false } });
@@ -89,7 +89,7 @@ describe("AI infrastructure guards", () => {
       },
     ]);
     setAiProviderForTests(provider);
-    resetAiRateLimitForTests();
+    await resetAiRateLimitForTests();
     await runAiCompletion({
       auth,
       feature: "EXPENSE_TEXT",
@@ -115,7 +115,7 @@ describe("AI infrastructure guards", () => {
     setAiProviderForTests(provider);
     await prisma.aiUsage.deleteMany({ where: { familyId: auth.familyId } });
     await prisma.family.update({ where: { id: auth.familyId }, data: { aiMonthlyCapMicros: 500 } });
-    resetAiRateLimitForTests();
+    await resetAiRateLimitForTests();
     for (let i = 0; i < 20; i++) {
       await runAiCompletion({
         auth,

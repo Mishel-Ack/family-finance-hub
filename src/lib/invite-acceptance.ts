@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { httpError, notFound } from "@/lib/http-error";
 import { countAllFamilyExpenses } from "@/lib/expense-queries";
 import { recordActivity } from "@/lib/activity-queries";
+import { clearRateLimitsForTests, consumeRateLimit } from "@/lib/rate-limit";
 
 export function hashInviteToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
@@ -100,24 +101,16 @@ export async function acceptInviteInTransaction(
 }
 
 export function assertInviteAcceptRateLimit(ip: string) {
-  const now = Date.now();
-  const entry = inviteAcceptAttempts.get(ip);
-  if (entry && entry.resetAt > now && entry.count >= 5) {
-    throw httpError("Too many invite attempts. Please try again in 15 minutes.", 429);
-  }
-  if (!entry || entry.resetAt <= now) {
-    inviteAcceptAttempts.set(ip, { count: 1, resetAt: now + FIFTEEN_MINUTES });
-  } else {
-    entry.count += 1;
-  }
+  return consumeRateLimit(
+    `invite:${ip}`,
+    5,
+    FIFTEEN_MINUTES,
+    "Too many invite attempts. Please try again in 15 minutes.",
+  );
 }
 
 export function resetInviteRateLimitForTests() {
-  if (process.env["NODE_ENV"] !== "test") {
-    throw new Error("Invite rate limit test seam only available in test mode");
-  }
-  inviteAcceptAttempts.clear();
+  return clearRateLimitsForTests("invite");
 }
 
 const FIFTEEN_MINUTES = 15 * 60 * 1000;
-const inviteAcceptAttempts = new Map<string, { count: number; resetAt: number }>();

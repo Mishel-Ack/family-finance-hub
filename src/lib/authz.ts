@@ -52,7 +52,9 @@ export type Action =
   | "purchase:submit"
   | "purchase:decide"
   | "purchase:cancelOwn"
-  | "notification:read";
+  | "notification:read"
+  | "coach:use"
+  | "scenario:manage";
 
 const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
   OWNER: new Set<Action>([
@@ -101,6 +103,8 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "purchase:decide",
     "purchase:cancelOwn",
     "notification:read",
+    "coach:use",
+    "scenario:manage",
   ]),
   ADMIN: new Set<Action>([
     "family:rename",
@@ -139,6 +143,8 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "purchase:decide",
     "purchase:cancelOwn",
     "notification:read",
+    "coach:use",
+    "scenario:manage",
   ]),
   MEMBER: new Set<Action>([
     "expense:create",
@@ -159,6 +165,8 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "purchase:submit",
     "purchase:cancelOwn",
     "notification:read",
+    "coach:use",
+    "scenario:manage",
   ]),
   VIEWER: new Set<Action>([
     "readAll",
@@ -168,6 +176,7 @@ const PERMISSION_MATRIX: Record<Role, Set<Action>> = {
     "family:create",
     "planner:run",
     "notification:read",
+    "coach:use",
   ]),
 };
 

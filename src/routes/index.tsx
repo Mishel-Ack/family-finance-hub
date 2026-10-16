@@ -66,10 +66,14 @@ function LandingPage() {
             ) : (
               <>
                 <Button asChild variant="ghost" size="sm" className="font-medium">
-                  <Link to="/auth">Sign In</Link>
+                  <Link to="/auth" search={{ tab: "login" }}>
+                    Sign In
+                  </Link>
                 </Button>
                 <Button asChild size="sm" className="font-medium">
-                  <Link to="/auth">Get Started</Link>
+                  <Link to="/auth" search={{ tab: "register" }}>
+                    Get Started
+                  </Link>
                 </Button>
               </>
             )}
@@ -99,7 +103,7 @@ function LandingPage() {
                   size="lg"
                   className="bg-white text-brand-deep hover:bg-white/90 font-semibold shadow-lift"
                 >
-                  <Link to="/auth">
+                  <Link to="/auth" search={{ tab: "register" }}>
                     Create Family Account <ArrowRight className="ml-2 h-5 w-5" />
                   </Link>
                 </Button>
@@ -109,7 +113,9 @@ function LandingPage() {
                   size="lg"
                   className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white font-medium"
                 >
-                  <Link to="/auth">Login to App</Link>
+                  <Link to="/auth" search={{ tab: "login" }}>
+                    Login to App
+                  </Link>
                 </Button>
               </div>
             </div>
@@ -242,10 +248,14 @@ function LandingPage() {
                 </div>
                 <div className="flex flex-col gap-3 sm:flex-row lg:flex-col lg:items-end">
                   <Button asChild size="lg" className="w-full sm:w-auto">
-                    <Link to="/auth">Register New Family</Link>
+                    <Link to="/auth" search={{ tab: "register" }}>
+                      Register New Family
+                    </Link>
                   </Button>
                   <Button asChild variant="outline" size="lg" className="w-full sm:w-auto">
-                    <Link to="/auth">Sign In to Account</Link>
+                    <Link to="/auth" search={{ tab: "login" }}>
+                      Sign In to Account
+                    </Link>
                   </Button>
                 </div>
               </div>

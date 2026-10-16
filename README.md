@@ -27,7 +27,7 @@ Set `DATABASE_URL_TEST` to that database. The Vitest global setup refuses a URL 
 
 - PostgreSQL via Prisma is the only data layer.
 - Registration creates a user, family, OWNER membership, and the eight default categories in one transaction.
-- Login and registration validate input on the server. Passwords use bcryptjs with cost 12. Login failures are rate limited in memory to five failures per email and IP per 15 minutes; this needs Redis for multi-instance deployments.
+- Login and registration validate input on the server. Passwords use bcryptjs with cost 12. Login failures, invite acceptance, AI requests, and CSV exports use an atomic PostgreSQL-backed window limiter.
 - Auth uses a signed, seven-day session cookie with `HttpOnly`, `SameSite=Lax`, and `Secure` in production. Set `SESSION_COOKIE_NAME` to a valid cookie name and provide a `JWT_SECRET` of at least 32 characters. State-changing server functions reject missing or mismatched `Origin` headers; set `APP_ORIGIN` to the public origin in production.
 - Server functions resolve the user and their family membership from the cookie. Family, member, expense, budget, category, and report reads/writes are scoped to that membership. Roles are OWNER, ADMIN, MEMBER, and VIEWER.
 - Money is stored as integer paise. Inputs reject non-positive values and more than two decimal places; display values are formatted in Indian Rupees.
@@ -95,7 +95,7 @@ The table lists every action in `src/lib/authz.ts`. Record-specific guards furth
 - Private expense details and identifiers are excluded from shared activity entries. The activity feed records shared expense events, budgets, categories, membership, invitations, splits, and settlements. It does not record private expense data.
 - Invite links contain a cryptographically random token. The database stores only its SHA-256 hash; links expire after seven days, can be revoked, and are accepted once. Raw invite tokens are returned only when a link is created.
 - Sessions are HMAC-signed, last seven days, and use the configured `SESSION_COOKIE_NAME` (default `fb_session`) with `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
-- Login is limited to five failed attempts per email-and-IP key in a 15-minute window. The limiter is in memory, resets on restart, and is not shared by multiple instances.
+- Login is limited to five failed attempts per hashed email-and-IP key in a 15-minute window. Invite, AI, and export limits are stored in PostgreSQL and shared across instances.
 
 ## Member management
 
@@ -120,19 +120,32 @@ npx tsc --noEmit
 
 ## Deploy to Render
 
-This project builds with Nitro's `node-server` preset and uses the standard Prisma Client. The health check at `/api/health` returns HTTP 200 when PostgreSQL is reachable and HTTP 503 otherwise.
+This project builds with Nitro's `node-server` preset and uses the standard Prisma Client. `/api/health` returns the build version and latest applied migration; it returns HTTP 503 for an unavailable database, an unfinished migration, or schema drift.
 
-1. Create a Render **Web Service** from this repository and select **Docker** as the runtime. Render builds from the included `Dockerfile`.
-2. Add a PostgreSQL database in Render and set these service environment variables:
-   - `DATABASE_URL`: Render's internal PostgreSQL connection string.
-   - `JWT_SECRET`: a strong random secret with at least 32 characters.
-   - `APP_ORIGIN`: the public HTTPS origin, for example `https://familybudget.onrender.com`.
-   - `NODE_ENV`: `production`.
-   - `SESSION_COOKIE_NAME`: optional; defaults to `fb_session`.
-3. Deploy. The container runs `prisma migrate deploy` once at startup before launching the Node server; database migrations are not run per request.
+1. Create a Render Blueprint from this repository and review `render.yaml`. It defines the Docker web service, PostgreSQL database, insight cron, and notification cron.
+2. Set `APP_ORIGIN` in the Blueprint prompt to the exact public HTTPS origin. Render generates `JWT_SECRET`; AI is disabled by default.
+3. Deploy. The web container and cron jobs run `prisma migrate deploy` before starting their respective work.
 4. Check `https://<your-service>.onrender.com/api/health` after deployment.
 
 For a local production smoke check, build with `npm run build`, set the production environment variables, run `npx prisma migrate deploy`, and start with `npm run start`.
+
+## UX, notifications, and offline use
+
+The app supports saved planner scenarios, sinking-fund templates, goal-feasibility estimates, a shared-spending health trend, and per-user in-app notification preferences. The scheduled notification job emits 80%/100% monthly budget alerts and three-day reminders for confirmed recurring payments. The job is idempotent and can be run with `npm run notifications:run`. Recurring charges detected from shared expenses can be confirmed/dismissed, added manually, and advanced after payment.
+
+The expense form can queue drafts in IndexedDB while offline and sync them when connectivity returns. The queue is scoped to the active user and family, is stored locally without encryption, and uses an idempotency key to avoid duplicate expenses after retries. Drafts can be reviewed, retried, or discarded; signing out asks whether to preserve or remove queued drafts.
+
+Use Ctrl+K (or Cmd+K on macOS) to search pages, run actions such as adding an expense, and search the caller's visible expense records. Light, dark, and system themes are available in Settings. Voice entry uses browser speech recognition when supported; recognized text is passed through the normal expense draft parser and should be reviewed before saving.
+
+The service worker caches only the offline page, manifest, and icons. It does not cache authenticated responses or provide background expense synchronization.
+
+## AI features and Family Coach
+
+AI-backed categorization, smart expense parsing, receipt extraction, bank-message parsing, and the family Coach use Anthropic when `ANTHROPIC_API_KEY` is configured. Global `AI_ENABLED=false` disables provider requests; if omitted, the global switch permits AI, but a family must separately enable AI (families default to disabled). The Coach at `/coach` saves private-to-the-user conversations and answers with family-scoped shared-data tools; private expenses are excluded. Monetary answers are checked against returned tool values, and unverified answers fall back to deterministic summaries. The Coach is informational budgeting assistance, not professional financial advice.
+
+Provider usage is guarded by a per-family monthly cost cap and a per-user AI rate limit. Model names and limits are configurable using the environment variables below. `npm run ai:smoke` makes one minimal request containing only a fixed test prompt; without an API key it exits successfully as skipped. It does not send household data.
+
+Additional implementation and operational references are in [docs/architecture.md](./docs/architecture.md), [docs/ml-explained.md](./docs/ml-explained.md), [docs/test-plan.md](./docs/test-plan.md), [docs/deployment.md](./docs/deployment.md), [docs/operations-runbook.md](./docs/operations-runbook.md), and [docs/demo-script.md](./docs/demo-script.md).
 
 ## Splits and settle-up
 
@@ -144,34 +157,74 @@ When a member leaves or is removed, the account is detached and its membership i
 
 ## Planning, insights and monthly story
 
-The What-if Planner runs a deterministic 1,000-run projection from the last six calendar months of **shared** expenses. It supports a savings target and reports when the family has too little history or has not configured income. Forecasts are estimates, not guarantees. Sinking funds and goals are family-scoped; fund contributions are recorded as explicit contribution rows rather than expenses. The monthly set-aside is derived from the remaining target and whole months to the due date.
+The What-if Planner runs a deterministic 1,000-run projection from the last six calendar months of **shared** expenses. It supports a savings target and reports when the family has too little history or has not configured income. Goal feasibility compares planned set-asides with configured monthly income after average shared spending over the last three complete calendar months, and withholds a feasibility result unless all three months have shared expense history. Forecasts are estimates, not guarantees. Scenarios, sinking funds, and goals are family-scoped; fund contributions are recorded as explicit contribution rows rather than expenses. The monthly set-aside is derived from the remaining target and whole months to the due date.
 
-The dashboard Insights panel and the `/story` report use shared expense reads through `src/lib/expense-queries.ts`. Story reports are recomputed on demand by OWNER/ADMIN and stored idempotently per family and month. CSV export offers shared rows or shared rows plus only the caller's own private rows; spreadsheet formula-leading cells are escaped and paise is formatted without floating point math.
+The dashboard Insights panel and the `/story` report use shared expense reads through `src/lib/expense-queries.ts`. Story reports are recomputed on demand by OWNER/ADMIN and stored idempotently per family and month. CSV export supports the selected date range and offers shared rows or shared rows plus only the caller's own private rows; spreadsheet formula-leading cells are escaped and paise is formatted without floating point math. Exports create a privacy-safe family activity entry. Reports can be printed from the Reports page.
 
-The app includes a static offline page and install manifest. Its service worker caches only the offline page, manifest and icon; it does not cache API responses or provide offline expense synchronization. Voice entry uses the browser's Web Speech API when supported and sends the transcript through the normal draft parser; recognition quality depends on the browser and device.
+### ML and analytics evaluation
+
+These are deterministic fixture metrics enforced by tests, not production guarantees:
+
+| Component                | Test fixture result                                      | Measurement notes                                                                |
+| ------------------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Merchant categorization  | At least 80% accuracy                                    | Date-ordered 40-row merchant fixture; 32 rows for history, 8 held out; no LLM.   |
+| Forecast backtest        | 23.49% MAPE; 4,668,052 paise MAE                         | Six-month, 400-expense demo fixture; uses only earlier months for each holdout.  |
+| Anomaly detection        | 100% recall on the seeded outlier                        | Synthetic 12-expense fixture with one known outlier; precision is also returned. |
+| Planner simulation       | 1,000 deterministic runs                                 | Unit test asserts a representative fixture completes in under 200 ms locally.    |
+| Financial health scoring | Partial and complete confidence values are distinguished | Incomplete inputs are reported instead of being silently treated as zero.        |
+
+Run `npm test` to execute these regression checks. On the deterministic demo fixture, anomaly precision is 26.67% and recall is 100% (4/4 seeded outliers); the forecast figures above are measured MAE/MAPE. These values are regression baselines for the checked-in fixture, not production performance or financial-outcome guarantees. `tests/demo-seed.integration.test.ts` asserts these metrics.
 
 ## Demo seed
 
-Run `npm run seed:demo` against a local development database to create the deterministic Sharma Family demo household. The script refuses production and remote database targets by default. It creates four accounts (`demo-owner@example.com`, `demo-admin@example.com`, `demo-member@example.com`, and `demo-viewer@example.com`) with one shared password, printed only in non-production. The seed is idempotent; `npm run seed:demo -- --reset` deletes only the deterministic demo family and recreates its records.
+Run `npm run seed:demo` against a local development database to create the deterministic Sharma Family demo household. The seed includes budgets, shared/private expenses, a pending purchase request, notifications, a goal, a contributed sinking fund, a saved scenario, a confirmed recurring charge, and a pre-written Coach example that makes no AI provider calls. Use `npm run seed:demo -- --large` to add 376 more transactions to the 24 baseline expenses (400 total), spanning six calendar months with repeated merchants and seeded outliers. The script refuses production and remote database targets by default. It creates four accounts (`demo-owner@example.com`, `demo-admin@example.com`, `demo-member@example.com`, and `demo-viewer@example.com`) with one shared password, printed only in non-production. The seed is idempotent; `npm run seed:demo -- --reset` deletes only the deterministic demo family and recreates its records.
 
 Remote demo seeding requires both `--force-remote` and `ALLOW_DEMO_SEED=true`; production is always refused. Never use demo accounts or seed data on a production database.
 
 ## Environment variables
 
-| Variable              | Required           | Purpose                                                                                                             |
-| --------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`        | Yes                | PostgreSQL connection used by the app and migrations.                                                               |
-| `DATABASE_URL_TEST`   | Tests              | Separate PostgreSQL database for integration tests.                                                                 |
-| `JWT_SECRET`          | Yes                | HMAC signing key; at least 32 characters.                                                                           |
-| `APP_ORIGIN`          | Yes for production | Public origin used for CSRF checks and invite links; use HTTPS in production.                                       |
-| `NODE_ENV`            | Yes for production | Set to `production` for deployed service.                                                                           |
-| `SESSION_COOKIE_NAME` | No                 | Session cookie name; defaults to `fb_session`.                                                                      |
-| `ALLOW_DEMO_SEED`     | No                 | Must equal `true` together with `--force-remote` to seed a non-local database. Production seeding remains disabled. |
+| Variable                  | Required           | Purpose                                                                                                                                |
+| ------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`            | Yes                | PostgreSQL connection used by the app and migrations.                                                                                  |
+| `DATABASE_URL_TEST`       | Tests              | Separate PostgreSQL database for integration tests.                                                                                    |
+| `JWT_SECRET`              | Yes                | HMAC signing key; at least 32 characters.                                                                                              |
+| `APP_ORIGIN`              | Yes for production | Public origin used for CSRF checks and invite links; use HTTPS in production.                                                          |
+| `NODE_ENV`                | Yes for production | Set to `production` for deployed service.                                                                                              |
+| `SESSION_COOKIE_NAME`     | No                 | Session cookie name; defaults to `fb_session`.                                                                                         |
+| `ALLOW_DEMO_SEED`         | No                 | Must equal `true` together with `--force-remote` to seed a non-local database. Production seeding remains disabled.                    |
+| `AI_ENABLED`              | No                 | Set to `"false"` to disable provider-backed AI globally. Unset permits AI, but each family must also enable it (families default off). |
+| `ANTHROPIC_API_KEY`       | No                 | Anthropic API key. Leave blank to run without AI — all AI features degrade gracefully.                                                 |
+| `AI_MODEL_FAST`           | No                 | Model ID for categorisation, text parse, bank-message import. Default: `claude-haiku-4-5-20251001`.                                    |
+| `AI_MODEL_VISION`         | No                 | Model ID for receipt OCR. Default: `claude-sonnet-5-5`.                                                                                |
+| `AI_MODEL_COACH`          | No                 | Model ID for AI coach and scenario explanations. Default: `claude-sonnet-5-5`.                                                         |
+| `AI_MONTHLY_CAP_MICROS`   | No                 | Monthly cost cap per family in micros (1 micro = 0.000001 USD). Default `5000000` (~$5 USD / family / month).                          |
+| `AI_RATE_LIMIT_CALLS`     | No                 | Per-user AI calls allowed per window. Default `20`.                                                                                    |
+| `AI_RATE_LIMIT_WINDOW_MS` | No                 | Rate-limit window in milliseconds. Default `600000` (10 minutes).                                                                      |
+
+## npm scripts
+
+| Script                       | Purpose                                                                                 |
+| ---------------------------- | --------------------------------------------------------------------------------------- |
+| `npm run dev`                | Start Vite dev server.                                                                  |
+| `npm run build`              | Production build.                                                                       |
+| `npm run start`              | Start the built server (after `npm run build`).                                         |
+| `npm test`                   | Run all Vitest tests (unit + integration).                                              |
+| `npm run lint`               | ESLint check.                                                                           |
+| `npm run format`             | Prettier format.                                                                        |
+| `npm run seed:demo`          | Create the deterministic Sharma Family demo in a local dev database.                    |
+| `npm run insights:recompute` | Recompute and persist insights for all families. Safe to run via cron.                  |
+| `npm run notifications:run`  | Generate and deduplicate notifications for all families. Safe to run every few minutes. |
+| `npm run db:explain`         | Read-only local PostgreSQL `EXPLAIN ANALYZE` measurements for representative reads.     |
+| `npm run ai:smoke`           | Make one tiny Anthropic API call if `ANTHROPIC_API_KEY` is set; exit 0 if not.          |
+
+## CI
+
+GitHub Actions runs lint, TypeScript, the full test suite, and a production build against PostgreSQL 16 for pushes and pull requests. See [`.github/workflows/ci.yml`](./.github/workflows/ci.yml).
 
 ## Database backups and known limitations
 
-- Back up PostgreSQL with `pg_dump` before schema changes or data imports. Restore into a separate database first, verify the restored app and health endpoint, then switch the service connection if needed. Keep the dump encrypted and access-controlled.
-- Login rate limits are in-memory, reset when the process restarts, and do not coordinate across instances; use Redis for multi-instance deployments.
+- Back up PostgreSQL with `pg_dump` before schema changes or data imports. Follow the post-deploy, backup, and rollback steps in [docs/operations-runbook.md](./docs/operations-runbook.md). Restore into a separate database first, verify the restored app and health endpoint, then switch the service connection if needed. Keep the dump encrypted and access-controlled.
+- Rate-limit buckets contain only a hashed key, count, and expiry timestamp; expired buckets are periodically removed. Server error logs contain event, request ID, error type, and status metadata, not exception messages or stacks.
 - Live updates use polling rather than websockets.
 - An account can belong to only one family at a time.
 - Legacy expense rows without a former-member display-name snapshot cannot recover that historical name automatically.

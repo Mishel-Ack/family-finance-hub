@@ -167,6 +167,6 @@ export function modelFor(feature: AiFeature): string {
   if (feature === "CATEGORIZATION" || feature === "EXPENSE_TEXT" || feature === "BANK_MESSAGES") {
     return process.env["AI_MODEL_FAST"] ?? "claude-haiku-4-5-20251001";
   }
-  if (feature === "RECEIPT") return process.env["AI_MODEL_VISION"] ?? "claude-sonnet-5";
-  return process.env["AI_MODEL_COACH"] ?? "claude-sonnet-5";
+  if (feature === "RECEIPT") return process.env["AI_MODEL_VISION"] ?? "claude-sonnet-5-5";
+  return process.env["AI_MODEL_COACH"] ?? "claude-sonnet-5-5";
 }

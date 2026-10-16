@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tanstack/react-start", () => ({
+  createServerOnlyFn: <T>(fn: T): T => fn,
   createServerFn: () => {
     let parseInput = (input: unknown) => input;
     const builder = {
@@ -65,12 +66,8 @@ import {
   recordSettlementFn,
   deleteSettlementFn,
 } from "@/services/balances";
-import {
-  configureAuthTests,
-  loginFn,
-  registerFn,
-  resetLoginRateLimitForTests,
-} from "@/services/auth.server";
+import { configureAuthTests, loginFn, registerFn } from "@/services/auth.server";
+import { clearRateLimitsForTests } from "@/lib/rate-limit";
 import type { FamilyMember, User } from "@prisma/client";
 
 interface FixtureMember {
@@ -204,7 +201,7 @@ beforeEach(async () => {
   configureAuthTests({ cookieHandler: () => undefined });
   configureActivityTests({});
   configureSettlementClockForTests(undefined);
-  resetLoginRateLimitForTests();
+  await clearRateLimitsForTests("login");
 });
 
 afterEach(async () => {
@@ -214,7 +211,7 @@ afterEach(async () => {
   configureAuthTests({});
   configureActivityTests({});
   configureSettlementClockForTests(undefined);
-  resetLoginRateLimitForTests();
+  await clearRateLimitsForTests("login");
   await wipeTestDatabase();
 });
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = "familybudget-shell-v1";
+const CACHE_NAME = "familybudget-shell-v2";
 const STATIC_ASSETS = ["/offline.html", "/manifest.webmanifest", "/icons/familybudget.svg"];
 
 self.addEventListener("install", (event) => {
@@ -20,7 +20,8 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET" || new URL(request.url).origin !== self.location.origin) return;
-  if (new URL(request.url).pathname.startsWith("/api/")) return;
+  const path = new URL(request.url).pathname;
+  if (path.startsWith("/api/") || path.startsWith("/auth")) return;
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request).catch(async () => (await caches.match("/offline.html")) || Response.error()),

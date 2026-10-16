@@ -163,7 +163,7 @@ export const acceptInviteFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     assertSameOrigin();
     const auth = await requireSessionUser();
-    assertInviteAcceptRateLimit(
+    await assertInviteAcceptRateLimit(
       getHeader("x-forwarded-for") ?? getHeader("x-real-ip") ?? "unknown",
     );
     try {

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/auth-context";
 import { toPaise } from "@/lib/money";
+import { SINKING_FUND_TEMPLATES } from "@/lib/planning-templates";
 import {
   contributeToFund,
   createGoal,
@@ -53,6 +54,35 @@ export function PlanningAssetsPanel() {
           <p>Loading funds and goals…</p>
         ) : (
           <>
+            <div
+              className={`rounded-lg border p-3 text-sm ${
+                assets.data.feasibility.isFeasible === false
+                  ? "border-warning bg-warning/10"
+                  : "bg-muted/40"
+              }`}
+              role={assets.data.feasibility.isFeasible === false ? "status" : undefined}
+            >
+              <p className="font-medium">Monthly goal feasibility</p>
+              {assets.data.feasibility.isFeasible === null ? (
+                <p className="mt-1 text-muted-foreground">
+                  {assets.data.feasibility.historyMonths <
+                  assets.data.feasibility.requiredHistoryMonths
+                    ? `Record shared expenses in at least ${assets.data.feasibility.requiredHistoryMonths} complete months to estimate savings capacity. ${assets.data.feasibility.historyMonths} of ${assets.data.feasibility.requiredHistoryMonths} months currently have shared expense history.`
+                    : `Add monthly household income to compare the ${formatRupees(assets.data.feasibility.monthlyCommitmentPaise)} planned monthly set-asides with recent shared spending.`}
+                </p>
+              ) : (
+                <p className="mt-1 text-muted-foreground">
+                  Recent shared spending averages{" "}
+                  {formatRupees(assets.data.feasibility.averageMonthlySharedSpendPaise ?? 0)}
+                  /month; the estimated savings capacity is{" "}
+                  {formatRupees(assets.data.feasibility.availableMonthlySavingsPaise ?? 0)}
+                  /month.
+                  {assets.data.feasibility.isFeasible
+                    ? " Your current goal and fund plans fit within that estimate."
+                    : ` Current plans need ${formatRupees(assets.data.feasibility.shortfallPaise ?? 0)} more each month than the estimate allows.`}
+                </p>
+              )}
+            </div>
             {assets.data.funds.map((fund) => (
               <div
                 key={fund.id}
@@ -137,6 +167,19 @@ export function PlanningAssetsPanel() {
               }}
             >
               <h3 className="font-medium">Create a sinking fund</h3>
+              <div className="flex flex-wrap gap-2">
+                {SINKING_FUND_TEMPLATES.map((template) => (
+                  <Button
+                    key={template.name}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setFundName(template.name)}
+                  >
+                    {template.label}
+                  </Button>
+                ))}
+              </div>
               <Label htmlFor="fund-name">Fund name</Label>
               <Input
                 id="fund-name"

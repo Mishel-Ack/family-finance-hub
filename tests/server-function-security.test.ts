@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tanstack/react-start", () => ({
+  createServerOnlyFn: <T>(fn: T): T => fn,
   createServerFn: () => {
     let parseInput = (input: unknown) => input;
     const builder = {
@@ -130,6 +131,12 @@ const validInputs: Record<string, unknown> = {
   giveInsightFeedbackFn: { insightId: "00000000-0000-4000-8000-000000000001", verdict: "USEFUL" },
   setIncomeProfileFn: 100000,
   runPlannerFn: [],
+  exportExpensesFn: { includePrivate: false },
+  getFinancialHealthFn: undefined,
+  listScenariosFn: undefined,
+  createScenarioFn: { name: "Security scenario", changes: [] },
+  renameScenarioFn: { id: "00000000-0000-4000-8000-000000000001", name: "Renamed" },
+  deleteScenarioFn: "00000000-0000-4000-8000-000000000001",
   getPlanningAssetsFn: undefined,
   createSinkingFundFn: { name: "Emergency", targetPaise: 10000, dueDate: "2027-01-01" },
   createGoalFn: { name: "Car", targetPaise: 100000, targetDate: "2027-01-01" },
@@ -147,6 +154,18 @@ const validInputs: Record<string, unknown> = {
   listNotificationsFn: undefined,
   markNotificationReadFn: "00000000-0000-4000-8000-000000000001",
   markAllNotificationsReadFn: undefined,
+  getNotificationPreferencesFn: undefined,
+  updateNotificationPreferenceFn: { type: "INSIGHT", inApp: false },
+  listRecurringSubscriptionsFn: undefined,
+  searchExpensesForCommandFn: "grocery",
+  updateRecurringSubscriptionStatusFn: { merchant: "netflix", status: "DISMISSED" },
+  createManualRecurringSubscriptionFn: {
+    merchant: "netflix",
+    intervalDays: 30,
+    nextExpectedDate: "2026-10-30",
+    typicalAmountPaise: 79900,
+  },
+  advanceRecurringSubscriptionFn: "netflix",
   updateProfileNameFn: "Updated Name",
   updateOwnDisplayNameFn: "Updated Name",
   addFamilyMemberFn: { displayName: "New Member", role: "MEMBER" },
@@ -173,6 +192,10 @@ const validInputs: Record<string, unknown> = {
   deleteBudgetCategoryFn: "00000000-0000-4000-8000-000000000001",
   createInviteFn: { role: "MEMBER", email: "test@example.com" },
   revokeInviteFn: "00000000-0000-4000-8000-000000000001",
+  listCoachConversationsFn: undefined,
+  getCoachConversationFn: "00000000-0000-4000-8000-000000000001",
+  deleteCoachConversationFn: "00000000-0000-4000-8000-000000000001",
+  askCoachFn: { message: "What is my spend?" },
 };
 
 const intentionallyPublic = new Set([
@@ -368,6 +391,20 @@ describe("server-function security coverage", () => {
         dedupeKey: `security-${suffix}`,
       },
     });
+    const conversationB = await prisma.coachConversation.create({
+      data: {
+        familyId: familyB.id,
+        userId: ownerB.id,
+        title: "Foreign conversation",
+      },
+    });
+    const scenarioB = await prisma.scenario.create({
+      data: {
+        familyId: familyB.id,
+        name: "Foreign scenario",
+        definition: [],
+      },
+    });
 
     setAuthResolverForTests(async () => ({
       userId: ownerA.id,
@@ -414,6 +451,11 @@ describe("server-function security coverage", () => {
       decidePurchaseRequestFn: { id: requestB.id, status: "APPROVED" },
       cancelPurchaseRequestFn: requestB.id,
       markNotificationReadFn: notificationB.id,
+      getCoachConversationFn: conversationB.id,
+      deleteCoachConversationFn: conversationB.id,
+      askCoachFn: { conversationId: conversationB.id, message: "What is my spend?" },
+      renameScenarioFn: { id: scenarioB.id, name: "Attempted rename" },
+      deleteScenarioFn: scenarioB.id,
     };
     // The registry is deliberately exhaustive: a new ID-accepting endpoint must add a case here.
     const idEndpoints = [
@@ -443,6 +485,11 @@ describe("server-function security coverage", () => {
       "getMonthlySummaryFn",
       "getYearlyTrendFn",
       "listActivityFn",
+      "getCoachConversationFn",
+      "deleteCoachConversationFn",
+      "askCoachFn",
+      "renameScenarioFn",
+      "deleteScenarioFn",
     ];
     // Explicit exception registry: these functions accept no family-scoped record IDs.
     // Auth and invite entry points accept credentials, while create and report inputs carry values.
@@ -480,17 +527,29 @@ describe("server-function security coverage", () => {
       "setIncomeProfileFn",
       "getIncomeProfileFn",
       "runPlannerFn",
+      "exportExpensesFn",
       "getPlanningAssetsFn",
+      "getFinancialHealthFn",
+      "listScenariosFn",
+      "createScenarioFn",
+      "listRecurringSubscriptionsFn",
+      "searchExpensesForCommandFn",
+      "updateRecurringSubscriptionStatusFn",
+      "createManualRecurringSubscriptionFn",
+      "advanceRecurringSubscriptionFn",
       "createSinkingFundFn",
       "createGoalFn",
       "listPurchaseRequestsFn",
       "submitPurchaseRequestFn",
       "listNotificationsFn",
       "markAllNotificationsReadFn",
+      "getNotificationPreferencesFn",
+      "updateNotificationPreferenceFn",
       "getFamilyStoryFn",
       "generateFamilyStoryFn",
       "getInviteDetailsFn",
       "acceptInviteFn",
+      "listCoachConversationsFn",
     ];
     expect([...idEndpoints, ...nonIdEndpoints].sort()).toEqual([...declarations.keys()].sort());
     for (const name of idEndpoints) {
@@ -513,6 +572,11 @@ describe("server-function security coverage", () => {
           data: { year: 2026, memberId: memberB.id },
         })) as number[];
         expect(result, `${name} returns no foreign-family rows`).toEqual(Array(12).fill(0));
+        continue;
+      }
+      if (name === "listScenariosFn") {
+        const result = (await endpoints.get(name)!({ data: undefined })) as unknown[];
+        expect(result, `${name} returns no foreign-family rows`).toEqual([]);
         continue;
       }
       let error: unknown;

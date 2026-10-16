@@ -1,4 +1,14 @@
-import type { Expense } from "@/types";
+interface CsvExpense {
+  date: string;
+  description: string;
+  category_name?: string | null;
+  category?: string | undefined;
+  member_name_snapshot?: string | null;
+  member_id?: string | null;
+  family_member: string;
+  amount_paise: number;
+  visibility: "SHARED" | "PRIVATE";
+}
 
 function escapeCell(value: string): string {
   const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
@@ -11,7 +21,7 @@ function rupeesFromPaise(paise: number): string {
   return `${sign}${Math.floor(absolute / 100)}.${String(absolute % 100).padStart(2, "0")}`;
 }
 
-export function expensesToCsv(expenses: Expense[], includePrivate: boolean): string {
+export function expensesToCsv(expenses: CsvExpense[], includePrivate: boolean): string {
   const header = ["Date", "Description", "Category", "Member", "Amount (INR)", "Visibility"];
   const rows = expenses
     .filter((expense) => expense.visibility === "SHARED" || includePrivate)

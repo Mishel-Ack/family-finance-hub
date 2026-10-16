@@ -26,6 +26,7 @@ import { getAiSettings, setAiEnabled } from "@/services/ai";
 import { Switch } from "@/components/ui/switch";
 import { getIncomeProfile, setIncomeProfile } from "@/services/insights";
 import { fromPaise, toPaise } from "@/lib/money";
+import { useTheme } from "@/hooks/theme-context";
 
 export const Route = createFileRoute("/_authenticated/profile")({
   head: () => ({
@@ -45,6 +46,7 @@ export const Route = createFileRoute("/_authenticated/profile")({
 function ProfilePage() {
   const { profile, family, role, canEdit, displayName: currentDisplayName, refresh } = useAuth();
   const queryClient = useQueryClient();
+  const { theme, setTheme } = useTheme();
   const [name, setName] = useState("");
   const [familyName, setFamilyName] = useState("");
   const [error, setError] = useState("");
@@ -190,6 +192,33 @@ function ProfilePage() {
         title="Settings"
         description="Manage your account profile, family household, and members."
       />
+
+      <Card className="shadow-soft">
+        <CardHeader>
+          <CardTitle className="text-base">Appearance</CardTitle>
+          <CardDescription>
+            Choose a light or dark interface, or follow your device setting.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="max-w-sm">
+          <Label htmlFor="theme-preference">Color theme</Label>
+          <Select
+            value={theme}
+            onValueChange={(value) => {
+              if (value === "light" || value === "dark" || value === "system") setTheme(value);
+            }}
+          >
+            <SelectTrigger id="theme-preference">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="light">Light</SelectItem>
+              <SelectItem value="dark">Dark</SelectItem>
+              <SelectItem value="system">System</SelectItem>
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="shadow-soft">

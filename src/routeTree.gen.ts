@@ -16,6 +16,7 @@ import { Route as AuthenticatedActivityRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedApprovalsRouteImport } from './routes/_authenticated/approvals'
 import { Route as AuthenticatedBalancesRouteImport } from './routes/_authenticated/balances'
 import { Route as AuthenticatedBudgetsRouteImport } from './routes/_authenticated/budgets'
+import { Route as AuthenticatedCoachRouteImport } from './routes/_authenticated/coach'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedExpensesRouteImport } from './routes/_authenticated/expenses'
 import { Route as AuthenticatedMembersRouteImport } from './routes/_authenticated/members'
@@ -23,6 +24,7 @@ import { Route as AuthenticatedPlannerRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
 import { Route as AuthenticatedStoryRouteImport } from './routes/_authenticated/story'
+import { Route as AuthenticatedSubscriptionsRouteImport } from './routes/_authenticated/subscriptions'
 import { Route as ApiHealthRouteImport } from './routes/api.health'
 import { Route as JoinTokenRouteImport } from './routes/join.$token'
 
@@ -60,6 +62,11 @@ const AuthenticatedBudgetsRoute = AuthenticatedBudgetsRouteImport.update({
   path: '/budgets',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedCoachRoute = AuthenticatedCoachRouteImport.update({
+  id: '/coach',
+  path: '/coach',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -95,6 +102,12 @@ const AuthenticatedStoryRoute = AuthenticatedStoryRouteImport.update({
   path: '/story',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedSubscriptionsRoute =
+  AuthenticatedSubscriptionsRouteImport.update({
+    id: '/subscriptions',
+    path: '/subscriptions',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
@@ -113,6 +126,7 @@ export interface FileRoutesByFullPath {
   '/approvals': typeof AuthenticatedApprovalsRoute
   '/balances': typeof AuthenticatedBalancesRoute
   '/budgets': typeof AuthenticatedBudgetsRoute
+  '/coach': typeof AuthenticatedCoachRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/expenses': typeof AuthenticatedExpensesRoute
   '/members': typeof AuthenticatedMembersRoute
@@ -120,6 +134,7 @@ export interface FileRoutesByFullPath {
   '/profile': typeof AuthenticatedProfileRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/story': typeof AuthenticatedStoryRoute
+  '/subscriptions': typeof AuthenticatedSubscriptionsRoute
   '/api/health': typeof ApiHealthRoute
   '/join/$token': typeof JoinTokenRoute
 }
@@ -130,6 +145,7 @@ export interface FileRoutesByTo {
   '/approvals': typeof AuthenticatedApprovalsRoute
   '/balances': typeof AuthenticatedBalancesRoute
   '/budgets': typeof AuthenticatedBudgetsRoute
+  '/coach': typeof AuthenticatedCoachRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/expenses': typeof AuthenticatedExpensesRoute
   '/members': typeof AuthenticatedMembersRoute
@@ -137,6 +153,7 @@ export interface FileRoutesByTo {
   '/profile': typeof AuthenticatedProfileRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/story': typeof AuthenticatedStoryRoute
+  '/subscriptions': typeof AuthenticatedSubscriptionsRoute
   '/api/health': typeof ApiHealthRoute
   '/join/$token': typeof JoinTokenRoute
 }
@@ -149,6 +166,7 @@ export interface FileRoutesById {
   '/_authenticated/approvals': typeof AuthenticatedApprovalsRoute
   '/_authenticated/balances': typeof AuthenticatedBalancesRoute
   '/_authenticated/budgets': typeof AuthenticatedBudgetsRoute
+  '/_authenticated/coach': typeof AuthenticatedCoachRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/expenses': typeof AuthenticatedExpensesRoute
   '/_authenticated/members': typeof AuthenticatedMembersRoute
@@ -156,6 +174,7 @@ export interface FileRoutesById {
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/story': typeof AuthenticatedStoryRoute
+  '/_authenticated/subscriptions': typeof AuthenticatedSubscriptionsRoute
   '/api/health': typeof ApiHealthRoute
   '/join/$token': typeof JoinTokenRoute
 }
@@ -168,6 +187,7 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/balances'
     | '/budgets'
+    | '/coach'
     | '/dashboard'
     | '/expenses'
     | '/members'
@@ -175,6 +195,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reports'
     | '/story'
+    | '/subscriptions'
     | '/api/health'
     | '/join/$token'
   fileRoutesByTo: FileRoutesByTo
@@ -185,6 +206,7 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/balances'
     | '/budgets'
+    | '/coach'
     | '/dashboard'
     | '/expenses'
     | '/members'
@@ -192,6 +214,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reports'
     | '/story'
+    | '/subscriptions'
     | '/api/health'
     | '/join/$token'
   id:
@@ -203,6 +226,7 @@ export interface FileRouteTypes {
     | '/_authenticated/approvals'
     | '/_authenticated/balances'
     | '/_authenticated/budgets'
+    | '/_authenticated/coach'
     | '/_authenticated/dashboard'
     | '/_authenticated/expenses'
     | '/_authenticated/members'
@@ -210,6 +234,7 @@ export interface FileRouteTypes {
     | '/_authenticated/profile'
     | '/_authenticated/reports'
     | '/_authenticated/story'
+    | '/_authenticated/subscriptions'
     | '/api/health'
     | '/join/$token'
   fileRoutesById: FileRoutesById
@@ -273,6 +298,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedBudgetsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/coach': {
+      id: '/_authenticated/coach'
+      path: '/coach'
+      fullPath: '/coach'
+      preLoaderRoute: typeof AuthenticatedCoachRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/dashboard': {
       id: '/_authenticated/dashboard'
       path: '/dashboard'
@@ -322,6 +354,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedStoryRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/subscriptions': {
+      id: '/_authenticated/subscriptions'
+      path: '/subscriptions'
+      fullPath: '/subscriptions'
+      preLoaderRoute: typeof AuthenticatedSubscriptionsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/api/health': {
       id: '/api/health'
       path: '/api/health'
@@ -344,6 +383,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedApprovalsRoute: typeof AuthenticatedApprovalsRoute
   AuthenticatedBalancesRoute: typeof AuthenticatedBalancesRoute
   AuthenticatedBudgetsRoute: typeof AuthenticatedBudgetsRoute
+  AuthenticatedCoachRoute: typeof AuthenticatedCoachRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedExpensesRoute: typeof AuthenticatedExpensesRoute
   AuthenticatedMembersRoute: typeof AuthenticatedMembersRoute
@@ -351,6 +391,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedStoryRoute: typeof AuthenticatedStoryRoute
+  AuthenticatedSubscriptionsRoute: typeof AuthenticatedSubscriptionsRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -358,6 +399,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedApprovalsRoute: AuthenticatedApprovalsRoute,
   AuthenticatedBalancesRoute: AuthenticatedBalancesRoute,
   AuthenticatedBudgetsRoute: AuthenticatedBudgetsRoute,
+  AuthenticatedCoachRoute: AuthenticatedCoachRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedExpensesRoute: AuthenticatedExpensesRoute,
   AuthenticatedMembersRoute: AuthenticatedMembersRoute,
@@ -365,6 +407,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedStoryRoute: AuthenticatedStoryRoute,
+  AuthenticatedSubscriptionsRoute: AuthenticatedSubscriptionsRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

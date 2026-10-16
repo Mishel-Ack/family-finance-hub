@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tanstack/react-start", () => ({
+  createServerOnlyFn: <T>(fn: T): T => fn,
   createServerFn: () => {
     let parseInput = (input: unknown) => input;
     const builder = {
@@ -66,6 +67,31 @@ describe("demo seed integration", () => {
     expect(second).toEqual(first);
     expect(second.familyId).toBe(DEMO_FAMILY_ID);
     expect(second.counts.expenses).toBe(400);
+    expect(second.counts).toMatchObject({
+      goals: 1,
+      sinkingFunds: 1,
+      fundContributions: 1,
+      scenarios: 1,
+      incomeProfiles: 1,
+      purchaseRequests: 1,
+      notifications: 2,
+      coachMessages: 1,
+    });
+    expect(
+      await prisma.purchaseRequest.findFirst({
+        where: { familyId: second.familyId, status: "PENDING" },
+        select: { title: true },
+      }),
+    ).toEqual({ title: "School tablet" });
+    expect(
+      await prisma.coachMessage.findFirst({
+        where: { conversation: { familyId: second.familyId } },
+        select: { content: true, sources: true },
+      }),
+    ).toMatchObject({
+      content: expect.stringContaining("seeded sample"),
+      sources: [{ kind: "demo_fixture" }],
+    });
     const seedRows = await prisma.expense.findMany({
       where: { familyId: second.familyId, visibility: "SHARED" },
       select: { id: true, categoryId: true, description: true, amountPaise: true, date: true },
@@ -97,7 +123,9 @@ describe("demo seed integration", () => {
       `Large-seed backtest: ${JSON.stringify({ mapePercent: backtest.mapePercent, maePaise: backtest.maePaise, anomaly: backtest.anomaly })}`,
     );
     expect(backtest.rows).toHaveLength(4);
-    expect(backtest.mapePercent).not.toBeNull();
+    expect(backtest.mapePercent).toBeCloseTo(23.486756256205176, 5);
+    expect(backtest.maePaise).toBeCloseTo(4_668_052, 0);
+    expect(backtest.anomaly.precision).toBeCloseTo(0.26666666666666666, 5);
     expect(backtest.anomaly.recall).toBe(1);
     expect(
       backtest.anomaly.predictedCount - backtest.anomaly.truePositiveCount,

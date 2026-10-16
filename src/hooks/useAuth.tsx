@@ -45,8 +45,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setRole((membership?.membership.role as FamilyRole) ?? null);
       setDisplayName(membership?.membership.display_name ?? null);
       setMemberId(membership?.membership.id ?? null);
-    } catch (error) {
-      console.error("Failed to load server session", error);
+    } catch {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          event: "session_load_failed",
+          requestId: crypto.randomUUID(),
+        }),
+      );
       setSession(null);
       setProfile(null);
       setFamily(null);

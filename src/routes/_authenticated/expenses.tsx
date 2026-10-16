@@ -1,5 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Download, Pencil, Plus, Search, Trash2 } from "lucide-react";
@@ -55,9 +56,16 @@ import type { Expense } from "@/types";
 import { computeEqualSplit, computeExactSplit, computePercentSplit } from "@/lib/splits";
 import { toPaise } from "@/lib/money";
 import { SmartAddDialog } from "@/components/expenses/SmartAddDialog";
-import { expensesToCsv } from "@/lib/csv-export";
+import { exportExpenses } from "@/services/export";
 
 export const Route = createFileRoute("/_authenticated/expenses")({
+  validateSearch: (search: Record<string, unknown>) =>
+    z
+      .object({
+        q: z.string().trim().max(80).optional(),
+        add: z.preprocess((value) => value === true || value === "true", z.boolean().optional()),
+      })
+      .parse(search),
   head: () => ({
     meta: [
       { title: "Expenses · FamilyBudget" },
@@ -76,7 +84,9 @@ export const Route = createFileRoute("/_authenticated/expenses")({
 });
 
 function ExpensesPage() {
-  const { family, canEdit } = useAuth();
+  const { family, user, canEdit } = useAuth();
+  const routeSearch = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
@@ -125,8 +135,8 @@ function ExpensesPage() {
       typeof document !== "undefined" && document.visibilityState === "visible" ? 30_000 : false,
   });
 
-  const categoryOptions = categoriesQuery.data ?? [];
-  const memberOptions = membersQuery.data ?? [];
+  const categoryOptions = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
+  const memberOptions = useMemo(() => membersQuery.data ?? [], [membersQuery.data]);
 
   const rows = useMemo(() => {
     let list = query.data ?? [];
@@ -163,25 +173,31 @@ function ExpensesPage() {
 
   const exportCsv = async (includePrivate: boolean) => {
     try {
-      const exportRows = await listExpenses(
-        undefined,
-        undefined,
-        includePrivate ? "VISIBLE" : "SHARED",
-      );
-      const blob = new Blob([expensesToCsv(exportRows, includePrivate)], {
+      const { csv } = await exportExpenses(includePrivate, {
+        ...(from ? { from } : {}),
+        ...(to ? { to } : {}),
+      });
+      const blob = new Blob([csv], {
         type: "text/csv;charset=utf-8",
       });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = includePrivate
-        ? "familybudget-shared-and-my-private.csv"
-        : "familybudget-shared.csv";
+      link.download = [
+        "familybudget",
+        includePrivate ? "shared-and-my-private" : "shared",
+        from || to ? `${from || "start"}-to-${to || "today"}` : undefined,
+      ]
+        .filter(Boolean)
+        .join("-")
+        .concat(".csv");
       link.click();
       URL.revokeObjectURL(url);
       toast.success("CSV export downloaded");
-    } catch {
-      toast.error("Could not export expenses. Please try again.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not export expenses. Please try again.",
+      );
     }
   };
 
@@ -234,11 +250,21 @@ function ExpensesPage() {
         visibility: parsed.data.visibility,
         split: parsed.data.split,
       };
-      if (editId) await updateExpense(editId, input);
-      else await createExpense(input);
+      if (editId) {
+        await updateExpense(editId, input);
+        return false;
+      }
+      if (!family?.id || !user?.id) throw new Error("Your family account is not ready.");
+      return (await createExpense(input, { familyId: family.id, userId: user.id })).queued;
     },
-    onSuccess: () => {
-      toast.success(editId ? "Expense updated" : "Expense added");
+    onSuccess: (queued) => {
+      toast.success(
+        editId
+          ? "Expense updated"
+          : queued
+            ? "Expense saved offline and will sync when you reconnect"
+            : "Expense added",
+      );
       setOpen(false);
       setEditId(null);
       setForm({
@@ -269,7 +295,7 @@ function ExpensesPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const openCreate = () => {
+  const openCreate = useCallback(() => {
     setEditId(null);
     setForm({
       amount: "",
@@ -290,7 +316,18 @@ function ExpensesPage() {
     );
     setSplitValues({});
     setOpen(true);
-  };
+  }, [categoryOptions, memberOptions]);
+
+  useEffect(() => {
+    setSearch(routeSearch.q ?? "");
+    if (routeSearch.add) {
+      openCreate();
+      void navigate({
+        search: (previous) => ({ ...previous, add: undefined }),
+        replace: true,
+      });
+    }
+  }, [navigate, openCreate, routeSearch.add, routeSearch.q]);
 
   const openEdit = (expense: Expense) => {
     setEditId(expense.id);

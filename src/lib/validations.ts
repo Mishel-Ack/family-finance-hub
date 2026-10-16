@@ -94,6 +94,7 @@ export const expenseSchema = z.object({
   date: dateSchema,
   description: z.string().trim().max(200).optional().default(""),
   visibility: z.enum(["SHARED", "PRIVATE"]).optional().default("SHARED"),
+  clientRequestId: z.string().uuid().optional(),
   split: splitInputSchema.nullable().optional(),
   importFingerprint: z
     .string()

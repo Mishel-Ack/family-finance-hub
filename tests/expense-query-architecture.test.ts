@@ -23,6 +23,14 @@ const purchaseRequestQueryPattern =
   /\.purchaseRequest\.(?:findMany|findFirst|findUnique|findUniqueOrThrow|count|groupBy|aggregate|create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/g;
 const notificationQueryPattern =
   /\.(?:notification|notificationPreference)\.(?:findMany|findFirst|findUnique|findUniqueOrThrow|count|groupBy|aggregate|create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/g;
+const coachQueryPattern =
+  /\.(?:coachConversation|coachMessage)\.(?:findMany|findFirst|findUnique|findUniqueOrThrow|count|groupBy|aggregate|create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/g;
+const scenarioQueryPattern =
+  /\.scenario\.(?:findMany|findFirst|findUnique|findUniqueOrThrow|count|groupBy|aggregate|create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/g;
+const recurringPatternQueryPattern =
+  /\.recurringPatternRecord\.(?:findMany|findFirst|findUnique|findUniqueOrThrow|count|groupBy|aggregate|create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/g;
+const rateLimitBucketQueryPattern =
+  /\.rateLimitBucket\.(?:findMany|findFirst|findUnique|findUniqueOrThrow|count|create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/g;
 
 function typescriptFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -108,9 +116,13 @@ describe("expense query choke point", () => {
     const offenders = typescriptFiles(srcRoot)
       .filter(
         (path) =>
-          !["services/insights.ts", "services/planner.ts"].includes(
-            relative(srcRoot, path).replaceAll("\\", "/"),
-          ),
+          ![
+            "services/insights.ts",
+            "services/planner.ts",
+            "services/financial-health.ts",
+            "services/notification-jobs.ts",
+            "services/planning-assets.ts",
+          ].includes(relative(srcRoot, path).replaceAll("\\", "/")),
       )
       .flatMap((path) => {
         const contents = readFileSync(path, "utf8");
@@ -125,7 +137,10 @@ describe("expense query choke point", () => {
   it("keeps sinking fund, contribution and goal access in the planning service", () => {
     const offenders = typescriptFiles(srcRoot)
       .filter(
-        (path) => relative(srcRoot, path).replaceAll("\\", "/") !== "services/planning-assets.ts",
+        (path) =>
+          !["services/planning-assets.ts", "services/notification-jobs.ts"].includes(
+            relative(srcRoot, path).replaceAll("\\", "/"),
+          ),
       )
       .flatMap((path) => {
         const contents = readFileSync(path, "utf8");
@@ -140,7 +155,10 @@ describe("expense query choke point", () => {
   it("keeps monthly report access in the family story service", () => {
     const offenders = typescriptFiles(srcRoot)
       .filter(
-        (path) => relative(srcRoot, path).replaceAll("\\", "/") !== "services/family-story.ts",
+        (path) =>
+          !["services/family-story.ts", "services/notification-jobs.ts"].includes(
+            relative(srcRoot, path).replaceAll("\\", "/"),
+          ),
       )
       .flatMap((path) => {
         const contents = readFileSync(path, "utf8");
@@ -174,6 +192,66 @@ describe("expense query choke point", () => {
       .flatMap((path) => {
         const contents = readFileSync(path, "utf8");
         return [...contents.matchAll(notificationQueryPattern)].map(
+          (match) =>
+            `${relative(srcRoot, path)}:${contents.slice(0, match.index).split("\n").length}`,
+        );
+      });
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps coach conversation and message access in coach service or family cleanup", () => {
+    const allowed = ["services/coach.ts", "services/family.ts"];
+    const offenders = typescriptFiles(srcRoot)
+      .filter((path) => !allowed.includes(relative(srcRoot, path).replaceAll("\\", "/")))
+      .flatMap((path) => {
+        const contents = readFileSync(path, "utf8");
+        return [...contents.matchAll(coachQueryPattern)].map(
+          (match) =>
+            `${relative(srcRoot, path)}:${contents.slice(0, match.index).split("\n").length}`,
+        );
+      });
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps saved scenario access in the planner service", () => {
+    const offenders = typescriptFiles(srcRoot)
+      .filter((path) => relative(srcRoot, path).replaceAll("\\", "/") !== "services/planner.ts")
+      .flatMap((path) => {
+        const contents = readFileSync(path, "utf8");
+        return [...contents.matchAll(scenarioQueryPattern)].map(
+          (match) =>
+            `${relative(srcRoot, path)}:${contents.slice(0, match.index).split("\n").length}`,
+        );
+      });
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps recurring pattern access in the subscription service", () => {
+    const offenders = typescriptFiles(srcRoot)
+      .filter(
+        (path) => relative(srcRoot, path).replaceAll("\\", "/") !== "services/subscriptions.ts",
+      )
+      .flatMap((path) => {
+        const contents = readFileSync(path, "utf8");
+        return [...contents.matchAll(recurringPatternQueryPattern)].map(
+          (match) =>
+            `${relative(srcRoot, path)}:${contents.slice(0, match.index).split("\n").length}`,
+        );
+      });
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps rate-limit bucket access in the shared rate-limit service", () => {
+    const offenders = typescriptFiles(srcRoot)
+      .filter(
+        (path) =>
+          !["lib/rate-limit.ts", "lib/rate-limit.test.ts"].includes(
+            relative(srcRoot, path).replaceAll("\\", "/"),
+          ),
+      )
+      .flatMap((path) => {
+        const contents = readFileSync(path, "utf8");
+        return [...contents.matchAll(rateLimitBucketQueryPattern)].map(
           (match) =>
             `${relative(srcRoot, path)}:${contents.slice(0, match.index).split("\n").length}`,
         );

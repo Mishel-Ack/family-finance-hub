@@ -34,6 +34,7 @@ import { parseReceipt } from "@/services/receipt";
 import { parseBankMessagesFnCall } from "@/services/bank-import";
 import { saveCategoryCorrection, suggestCategory } from "@/services/categorization";
 import { fromPaise } from "@/lib/money";
+import { speechTranscriptFromEvent, type SpeechTranscriptEvent } from "@/lib/voice-transcript";
 
 interface SmartDraft {
   key: string;
@@ -52,14 +53,10 @@ interface SmartDraft {
   duplicate: boolean;
 }
 
-interface SpeechResultEvent {
-  results: ArrayLike<ArrayLike<{ transcript: string }>>;
-}
-
 interface SpeechRecognitionLike {
   lang: string;
   interimResults: boolean;
-  onresult: ((event: SpeechResultEvent) => void) | null;
+  onresult: ((event: SpeechTranscriptEvent) => void) | null;
   onerror: (() => void) | null;
   onend: (() => void) | null;
   start(): void;
@@ -73,7 +70,7 @@ function currencyInput(paise: number) {
 }
 
 export function SmartAddDialog() {
-  const { family, memberId } = useAuth();
+  const { family, memberId, user } = useAuth();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState("text");
@@ -278,10 +275,7 @@ export function SmartAddDialog() {
     recognition.lang = speechLanguage;
     recognition.interimResults = false;
     recognition.onresult = (event) => {
-      const transcript = Array.from(event.results)
-        .map((result) => result[0]?.transcript ?? "")
-        .join(" ")
-        .trim();
+      const transcript = speechTranscriptFromEvent(event);
       if (transcript) {
         setText(transcript);
         setBusy(true);
@@ -301,32 +295,45 @@ export function SmartAddDialog() {
   const saveOne = async (draft: SmartDraft) => {
     if (!draft.categoryId) throw new Error("Choose a category before saving");
     if (draft.duplicate) throw new Error("This transaction was already imported");
-    if (draft.originalCategoryId && draft.originalCategoryId !== draft.categoryId) {
+    if (
+      (typeof navigator === "undefined" || navigator.onLine) &&
+      draft.originalCategoryId &&
+      draft.originalCategoryId !== draft.categoryId
+    ) {
       await saveCategoryCorrection({
         text: draft.description,
         categoryId: draft.categoryId,
         scope: draft.visibility,
       });
     }
-    await createExpense({
-      amount: fromPaise(draft.amountPaise),
-      categoryId: draft.categoryId,
-      memberId: draft.visibility === "PRIVATE" ? memberId : draft.memberId,
-      date: draft.date,
-      description: draft.description,
-      visibility: draft.visibility,
-      ...(draft.fingerprint ? { importFingerprint: draft.fingerprint } : {}),
-    });
+    if (!family?.id || !user?.id) throw new Error("Your family account is not ready.");
+    const result = await createExpense(
+      {
+        amount: fromPaise(draft.amountPaise),
+        categoryId: draft.categoryId,
+        memberId: draft.visibility === "PRIVATE" ? memberId : draft.memberId,
+        date: draft.date,
+        description: draft.description,
+        visibility: draft.visibility,
+        ...(draft.fingerprint ? { importFingerprint: draft.fingerprint } : {}),
+      },
+      { familyId: family.id, userId: user.id },
+    );
     setDrafts((current) => current.filter((item) => item.key !== draft.key));
+    return result.queued;
   };
 
   const saveMutation = useMutation({
     mutationFn: async (selected: SmartDraft[]) => {
       setSavingKey(selected.length === 1 ? selected[0]!.key : "all");
-      for (const draft of selected) await saveOne(draft);
+      let queued = false;
+      for (const draft of selected) queued = (await saveOne(draft)) || queued;
+      return queued;
     },
-    onSuccess: () => {
-      toast.success("Expense saved");
+    onSuccess: (queued) => {
+      toast.success(
+        queued ? "Expense saved offline and will sync when you reconnect" : "Expense saved",
+      );
       invalidate();
       if (drafts.length <= 1) setOpen(false);
     },
