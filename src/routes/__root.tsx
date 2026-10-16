@@ -122,6 +122,11 @@ function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "window.process = window.process || { env: {} };",
+          }}
+        />
         <HeadContent />
       </head>
       <body>

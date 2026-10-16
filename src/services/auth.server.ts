@@ -7,14 +7,15 @@ import { loginServerSchema, registerServerSchema } from "@/lib/validations";
 import { assertSameOrigin } from "@/lib/http-utils";
 import { acceptInviteInTransaction, assertInviteAcceptRateLimit } from "@/lib/invite-acceptance";
 import { registerWithInviteSchema } from "@/lib/validations";
-import {
-  assertRateLimitAvailable,
-  clearRateLimitsForTests,
-  consumeRateLimit,
-  resetRateLimit,
-} from "@/lib/rate-limit";
+import { assertRateLimitAvailable, consumeRateLimit, resetRateLimit } from "@/lib/rate-limit";
 
-const SESSION_COOKIE_NAME = process.env["SESSION_COOKIE_NAME"] ?? "fb_session";
+function getSessionCookieName(): string {
+  if (typeof process !== "undefined" && process.env?.["SESSION_COOKIE_NAME"]) {
+    return process.env["SESSION_COOKIE_NAME"];
+  }
+  return "fb_session";
+}
+
 const SEVEN_DAYS_SECONDS = 60 * 60 * 24 * 7;
 const encoder = new TextEncoder();
 
@@ -41,7 +42,7 @@ async function signingKey(): Promise<CryptoKey> {
 }
 
 function getJwtSecret(): string {
-  const secret = process.env["JWT_SECRET"];
+  const secret = typeof process !== "undefined" ? process.env?.["JWT_SECRET"] : undefined;
   if (!secret || secret.trim() === "") {
     throw new Error("FATAL: JWT_SECRET environment variable is missing.");
   }
@@ -56,13 +57,14 @@ export async function parseSessionFromHeader(
   cookieHeader: string | null | undefined,
 ): Promise<SessionPayload | null> {
   if (!cookieHeader) return null;
+  const cookieName = getSessionCookieName();
   const match = cookieHeader
     .split(";")
     .map((c) => c.trim())
-    .find((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`));
+    .find((c) => c.startsWith(`${cookieName}=`));
   if (!match) return null;
 
-  const token = match.substring(SESSION_COOKIE_NAME.length + 1);
+  const token = match.substring(cookieName.length + 1);
   try {
     const [header, body, signature, extra] = token.split(".");
     if (!header || !body || !signature || extra) return null;
@@ -108,13 +110,17 @@ export async function createSessionToken(userId: string): Promise<string> {
 }
 
 async function setSessionCookie(token: string) {
-  if (process.env["NODE_ENV"] === "test" && cookieHandlerForTests) {
+  if (
+    typeof process !== "undefined" &&
+    process.env?.["NODE_ENV"] === "test" &&
+    cookieHandlerForTests
+  ) {
     cookieHandlerForTests();
     return;
   }
-  const isProd = process.env["NODE_ENV"] === "production";
+  const isProd = typeof process !== "undefined" && process.env?.["NODE_ENV"] === "production";
   const { setCookie } = await import("@tanstack/react-start/server");
-  setCookie(SESSION_COOKIE_NAME, token, {
+  setCookie(getSessionCookieName(), token, {
     path: "/",
     maxAge: SEVEN_DAYS_SECONDS,
     httpOnly: true,
@@ -124,22 +130,22 @@ async function setSessionCookie(token: string) {
 }
 
 async function clearSessionCookie() {
-  if (process.env["NODE_ENV"] === "test" && cookieHandlerForTests) {
+  if (
+    typeof process !== "undefined" &&
+    process.env?.["NODE_ENV"] === "test" &&
+    cookieHandlerForTests
+  ) {
     cookieHandlerForTests();
     return;
   }
-  const isProd = process.env["NODE_ENV"] === "production";
+  const isProd = typeof process !== "undefined" && process.env?.["NODE_ENV"] === "production";
   const { deleteCookie } = await import("@tanstack/react-start/server");
-  deleteCookie(SESSION_COOKIE_NAME, {
+  deleteCookie(getSessionCookieName(), {
     path: "/",
     httpOnly: true,
     sameSite: "lax",
     secure: isProd,
   });
-}
-
-export function resetLoginRateLimitForTests() {
-  return clearRateLimitsForTests("login");
 }
 
 let registrationFailureForTests: (() => void) | undefined;
@@ -149,7 +155,7 @@ export function configureAuthTests(options: {
   registrationFailure?: (() => void) | undefined;
   cookieHandler?: (() => void) | undefined;
 }) {
-  if (process.env["NODE_ENV"] !== "test")
+  if (typeof process !== "undefined" && process.env?.["NODE_ENV"] !== "test")
     throw new Error("Auth test seam only available in test mode");
   registrationFailureForTests = options.registrationFailure;
   cookieHandlerForTests = options.cookieHandler;
