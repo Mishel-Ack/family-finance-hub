@@ -82,3 +82,4 @@ On the local PostgreSQL test database with the 400-expense demo seed, `npm run d
 - TypeScript, lint, production build, Prisma validation/migration status, and production dependency audit passed; `npm audit --omit=dev` reported 0 vulnerabilities.
 - The latest full suite was not clean (174 passed, 1 isolation hook timeout). Running the isolation file alone produced 32 passed and 2 timeouts. This remains an unresolved verification gap.
 - No deployment, live AI-provider request, remote GitHub Actions run, or Docker image build was performed.
+- Audit commit `8588140` is local; pushing `fixes` to `origin` failed because Git could not prompt for credentials.

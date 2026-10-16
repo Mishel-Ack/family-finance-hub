@@ -76,4 +76,4 @@ The full-suite and isolated-suite timing failures remain unresolved; the success
 - Deploy only when explicitly approved, then verify Render health and cron jobs; no deployment was performed here.
 - Run the GitHub Actions workflow remotely and rehearse `docs/demo-script.md`.
 - Browser-check the theme toggle and real SpeechRecognition support; complete keyboard, responsive, and screen-reader accessibility review.
-- Publish the resulting local commit to GitHub. Previous pushes to `origin/fixes` failed because Git could not prompt for credentials; publication must not be claimed until a push succeeds.
+- Push the audit commits from `fixes` to `origin/fixes`. The push failed because Git could not prompt for credentials; these commits are not confirmed published. Authenticate with GitHub and retry.
