@@ -29,10 +29,11 @@ export function assertSameOrigin() {
   try {
     if (!originHeader) throw new Error("missing Origin");
     const origin = new URL(originHeader).origin;
-    const expected = configuredOrigin
-      ? new URL(configuredOrigin).origin
-      : new URL(`${protocol}://${host}`).origin;
-    if (origin !== expected) throw new Error("origin mismatch");
+    const requestOrigin = host ? new URL(`${protocol}://${host}`).origin : null;
+    const configured = configuredOrigin ? new URL(configuredOrigin).origin : null;
+    const matchesRequest = requestOrigin !== null && origin === requestOrigin;
+    const matchesConfigured = configured !== null && origin === configured;
+    if (!matchesRequest && !matchesConfigured) throw new Error("origin mismatch");
   } catch {
     throw httpError("Request origin is not allowed", 403);
   }

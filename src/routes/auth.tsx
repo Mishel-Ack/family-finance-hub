@@ -13,7 +13,10 @@ import { loginFn, registerFn, registerWithInviteFn } from "@/services/auth.serve
 import { z } from "zod";
 
 export const Route = createFileRoute("/auth")({
-  validateSearch: z.object({ invite: z.string().optional() }),
+  validateSearch: z.object({
+    invite: z.string().optional(),
+    tab: z.enum(["login", "register"]).optional(),
+  }),
   ssr: false,
   head: () => ({
     meta: [
@@ -37,9 +40,15 @@ type Errors = Record<string, string>;
 
 function AuthPage() {
   const navigate = useNavigate();
-  const { invite } = Route.useSearch();
+  const { invite, tab: initialTab } = Route.useSearch();
   const { session, refresh } = useAuth();
-  const [tab, setTab] = useState("login");
+  const [tab, setTab] = useState(initialTab === "register" ? "register" : "login");
+
+  useEffect(() => {
+    if (initialTab) {
+      setTab(initialTab);
+    }
+  }, [initialTab]);
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
   const [login, setLogin] = useState({ email: "", password: "" });
