@@ -14,13 +14,19 @@
 
 ## Roadmap completion
 
-- [x] **A — Configuration and baseline:** model defaults, AI environment documentation, smoke command, and baseline quality gate.
-- [x] **B — AI Coach:** scoped coach tools and conversation storage, amount verification, permissions, UI, and security/architecture coverage.
-- [x] **C — Planner and planning gaps:** family-scoped scenario CRUD and activity, sinking-fund templates, set-aside/shortfall math, and a shared-spending health trend.
-- [x] **D — Notifications and subscriptions:** user-owned preferences, deduplicated scheduled notifications, and recurring candidates derived from shared expenses.
-- [x] **E — Export, offline queue, and PWA:** scoped/rate-limited server CSV, idempotent create, family/user-scoped IndexedDB queue and sync status, cache versioning, and auth/API cache exclusions.
-- [x] **F — UX polish:** navigation-only Ctrl/Cmd+K palette, light/dark/system preference, voice transcript-to-draft flow, and keyboard/label/responsive UI support.
-- [x] **G — Hardening, deployment, and docs:** patched production dependencies, architecture guards, non-root health-checked Docker runtime, Render web/cron blueprint, PostgreSQL CI workflow, deterministic 400-expense seed, README, and five operational/technical guides.
+Implementation and verification status from the 2026-10-16 audit:
+
+| Step | Status  | Summary                                                                                            |
+| ---- | ------- | -------------------------------------------------------------------------------------------------- |
+| A    | PARTIAL | AI controls and smoke-script skip are tested; live provider smoke remains manual.                  |
+| B    | DONE    | Coach service/page, persistence migration, and regressions are covered.                            |
+| C    | DONE    | Scenario UI/service, templates, and planning behavior are covered.                                 |
+| D    | DONE    | Subscription UI and notification jobs/preferences have regression coverage.                        |
+| E    | DONE    | Export, scoped offline queue, and PWA cache behavior have regression coverage.                     |
+| F    | PARTIAL | Theme and voice logic are tested; browser interaction and full accessibility review remain manual. |
+| G    | PARTIAL | Render/CI/docs artifacts are tested; Docker build, remote Actions, and deployment were not run.    |
+
+The feature-by-feature status, file proof, and test evidence are maintained in [FINAL_REPORT.md](./FINAL_REPORT.md). These statuses replace the previous blanket completion checkboxes.
 
 ## Decisions and known limitations
 
@@ -31,7 +37,7 @@
 - The Docker image could not be built in this environment because Docker Desktop's engine was unavailable. The Dockerfile and Render configuration were reviewed and formatted.
 - The later detailed-mission continuation adds a reviewed migration for confirmed recurring schedules (`intervalDays`, `nextExpectedAt`, and `typicalAmountPaise`); it has been applied to the local development and test databases.
 
-## Final quality gate
+## Historical quality gate (2026-10-15)
 
 | Check                  | Result                  |
 | ---------------------- | ----------------------- |
@@ -40,6 +46,8 @@
 | ESLint                 | Pass, no warnings       |
 | Production build       | Pass                    |
 | `npm audit --omit=dev` | Pass, 0 vulnerabilities |
+
+These results describe the earlier completion checkpoint, not the latest evidence audit.
 
 ## Completion record
 
@@ -66,3 +74,11 @@
 ### Measured query-plan sample
 
 On the local PostgreSQL test database with the 400-expense demo seed, `npm run db:explain` measured 0.382 ms for the shared-expense query (100 rows returned), 0.120 ms for the recent-activity query (21 rows), and 0.035 ms for unread notifications (2 rows). The expense query used an index scan; the 33-row activity and 2-row notification tables used sequential scans. This is a small local fixture, not a production performance guarantee.
+
+## Latest evidence audit (2026-10-16)
+
+- The detailed A–G evidence matrix is in [FINAL_REPORT.md](./FINAL_REPORT.md).
+- Latest focused page/artifact/offline/theme/PWA run: 17 passed across 8 files; Coach/planner/subscription page smoke run: 3 passed across 2 files; Coach and AI service regressions: 11 passed across 2 files.
+- TypeScript, lint, production build, Prisma validation/migration status, and production dependency audit passed; `npm audit --omit=dev` reported 0 vulnerabilities.
+- The latest full suite was not clean (174 passed, 1 isolation hook timeout). Running the isolation file alone produced 32 passed and 2 timeouts. This remains an unresolved verification gap.
+- No deployment, live AI-provider request, remote GitHub Actions run, or Docker image build was performed.

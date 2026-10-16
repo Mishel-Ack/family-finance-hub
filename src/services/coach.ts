@@ -14,6 +14,7 @@ import { modelFor } from "@/lib/ai/provider";
 import { verifyAnswerMetrics } from "@/lib/ai/coach-verify";
 import { getInsightsForCoach, getIncomeForCoach } from "@/services/insights";
 import { getPlanningAssetsForCoach } from "@/services/planning-assets";
+import { logServerFailure } from "@/lib/server-logger";
 import type { Prisma, PrismaClient } from "@prisma/client";
 
 type CoachDb =
@@ -38,6 +39,10 @@ export interface ToolSource {
   tool: string;
   parameters: Record<string, string | number | boolean | null>;
   summary: string;
+}
+
+function isHttpError(error: unknown): error is Error & { statusCode: number } {
+  return error instanceof Error && "statusCode" in error && typeof error.statusCode === "number";
 }
 
 // Tool schemas
@@ -613,18 +618,10 @@ Available tools:
             temperature: 0,
           },
         });
-      } catch (err: unknown) {
-        // If AI is disabled or fails, return a graceful response
-        const fallbackText = "AI coach is currently unavailable or has reached its allowance.";
-        await prisma.coachMessage.create({
-          data: {
-            conversationId,
-            role: "ASSISTANT",
-            content: fallbackText,
-            sources: [],
-          },
-        });
-        return { conversationId, reply: fallbackText, sources: [] };
+      } catch (error: unknown) {
+        if (isHttpError(error)) throw error;
+        logServerFailure("coach.completion", error);
+        throw httpError("AI Coach is temporarily unavailable. Please try again later.", 503);
       }
 
       let parsed: {
@@ -650,8 +647,12 @@ Available tools:
             );
             toolResults.push({ tool: tc.name, result });
             sources.push(source);
-          } catch {
-            // Ignore individual tool failure
+          } catch (error: unknown) {
+            logServerFailure("coach.tool", error);
+            throw httpError(
+              "AI Coach could not retrieve verified household information. Please try again.",
+              502,
+            );
           }
         }
         currentPrompt += `\n\nTool Results:\n${JSON.stringify(toolResults)}\n\nNow synthesize your final answer using ONLY these figures. Return JSON: {"answer": string}`;
@@ -686,7 +687,8 @@ Available tools:
         } catch {
           finalAnswer = genCompletion.text;
         }
-      } catch {
+      } catch (error: unknown) {
+        logServerFailure("coach.final_completion", error);
         finalAnswer = buildCodeSummary(toolResults);
       }
     } else {
@@ -733,7 +735,8 @@ Available tools:
           // Second failure: fallback to deterministic code-built summary
           finalAnswer = buildCodeSummary(toolResults);
         }
-      } catch {
+      } catch (error: unknown) {
+        logServerFailure("coach.verification_retry", error);
         finalAnswer = buildCodeSummary(toolResults);
       }
     }

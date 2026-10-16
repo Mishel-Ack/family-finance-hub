@@ -1,7 +1,12 @@
+import { createServerOnlyFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 import { httpError } from "@/lib/http-error";
 
 let testHeaders: Record<string, string | undefined> | undefined;
+
+const getRequestHeaderFromServer = createServerOnlyFn((name: string) =>
+  getRequestHeader(name.toLowerCase() as Parameters<typeof getRequestHeader>[0]),
+);
 
 export function setHeadersForTests(headers: Record<string, string | undefined> | undefined) {
   if (process.env["NODE_ENV"] !== "test")
@@ -11,7 +16,7 @@ export function setHeadersForTests(headers: Record<string, string | undefined> |
 
 export function getHeader(name: string): string | undefined {
   if (testHeaders) return testHeaders[name.toLowerCase()];
-  return getRequestHeader(name.toLowerCase() as Parameters<typeof getRequestHeader>[0]);
+  return getRequestHeaderFromServer(name);
 }
 
 export function assertSameOrigin() {

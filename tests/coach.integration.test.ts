@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tanstack/react-start", () => ({
+  createServerOnlyFn: <T>(fn: T): T => fn,
   createServerFn: () => {
     let parseInput = (input: unknown) => input;
     const builder = {
@@ -300,6 +301,61 @@ describe("AI Coach integration & isolation", () => {
     // Should fall back to the deterministic code-built summary
     expect(response.reply).toContain("Based on your family's verified financial records");
     expect(response.reply).toContain("₹500");
+  });
+
+  it("surfaces provider failures without saving a success-shaped assistant reply", async () => {
+    setAiProviderForTests({
+      async complete() {
+        throw new Error("provider failure with private details");
+      },
+    });
+    await resetAiRateLimitForTests();
+    setAuthResolverForTests(async () => ({
+      userId: userAId,
+      familyId: familyAId,
+      memberId: memberAId,
+      role: "OWNER",
+      user: { id: userAId, name: "Owner A", email: "a@test.local" },
+    }));
+
+    await expect(askCoachFn({ data: { message: "Check my budget" } })).rejects.toMatchObject({
+      statusCode: 503,
+      message: "AI Coach is temporarily unavailable. Please try again later.",
+    });
+    const conversation = await prisma.coachConversation.findFirstOrThrow({
+      where: { familyId: familyAId, userId: userAId, title: "Check my budget" },
+      include: { messages: { orderBy: { createdAt: "asc" } } },
+    });
+    expect(conversation.messages.map((message) => message.role)).toEqual(["USER"]);
+    expect(JSON.stringify(conversation.messages)).not.toContain("private details");
+  });
+
+  it("does not silently ignore failed coach data tools", async () => {
+    setAiProviderForTests(
+      new MockAiProvider([
+        {
+          text: JSON.stringify({
+            tool_calls: [{ name: "unknown_tool", parameters: {} }],
+          }),
+          model: "claude-sonnet-5-5",
+          inputTokens: 10,
+          outputTokens: 20,
+        },
+      ]),
+    );
+    await resetAiRateLimitForTests();
+    setAuthResolverForTests(async () => ({
+      userId: userAId,
+      familyId: familyAId,
+      memberId: memberAId,
+      role: "OWNER",
+      user: { id: userAId, name: "Owner A", email: "a@test.local" },
+    }));
+
+    await expect(askCoachFn({ data: { message: "Check my budget" } })).rejects.toMatchObject({
+      statusCode: 502,
+      message: "AI Coach could not retrieve verified household information. Please try again.",
+    });
   });
 
   it("deletes user coach conversations when a member is removed", async () => {

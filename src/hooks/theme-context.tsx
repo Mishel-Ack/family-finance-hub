@@ -1,6 +1,9 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-
-export type ThemePreference = "light" | "dark" | "system";
+import {
+  isThemePreference,
+  resolvesToDarkTheme,
+  type ThemePreference,
+} from "@/lib/theme-preference";
 
 interface ThemeContextValue {
   theme: ThemePreference;
@@ -9,10 +12,6 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 const storageKey = "familybudget-theme";
-
-function isThemePreference(value: string | null): value is ThemePreference {
-  return value === "light" || value === "dark" || value === "system";
-}
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<ThemePreference>("system");
@@ -25,8 +24,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const applyTheme = () => {
-      const isDark = theme === "dark" || (theme === "system" && media.matches);
-      document.documentElement.classList.toggle("dark", isDark);
+      document.documentElement.classList.toggle("dark", resolvesToDarkTheme(theme, media.matches));
       document.documentElement.dataset["theme"] = theme;
       window.localStorage.setItem(storageKey, theme);
     };

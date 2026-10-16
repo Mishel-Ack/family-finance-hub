@@ -139,6 +139,12 @@ Use Ctrl+K (or Cmd+K on macOS) to search pages, run actions such as adding an ex
 
 The service worker caches only the offline page, manifest, and icons. It does not cache authenticated responses or provide background expense synchronization.
 
+## AI features and Family Coach
+
+AI-backed categorization, smart expense parsing, receipt extraction, bank-message parsing, and the family Coach use Anthropic when `ANTHROPIC_API_KEY` is configured. Global `AI_ENABLED=false` disables provider requests; if omitted, the global switch permits AI, but a family must separately enable AI (families default to disabled). The Coach at `/coach` saves private-to-the-user conversations and answers with family-scoped shared-data tools; private expenses are excluded. Monetary answers are checked against returned tool values, and unverified answers fall back to deterministic summaries. The Coach is informational budgeting assistance, not professional financial advice.
+
+Provider usage is guarded by a per-family monthly cost cap and a per-user AI rate limit. Model names and limits are configurable using the environment variables below. `npm run ai:smoke` makes one minimal request containing only a fixed test prompt; without an API key it exits successfully as skipped. It does not send household data.
+
 Additional implementation and operational references are in [docs/architecture.md](./docs/architecture.md), [docs/ml-explained.md](./docs/ml-explained.md), [docs/test-plan.md](./docs/test-plan.md), [docs/deployment.md](./docs/deployment.md), [docs/operations-runbook.md](./docs/operations-runbook.md), and [docs/demo-script.md](./docs/demo-script.md).
 
 ## Splits and settle-up
@@ -162,12 +168,12 @@ These are deterministic fixture metrics enforced by tests, not production guaran
 | Component                | Test fixture result                                      | Measurement notes                                                                |
 | ------------------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | Merchant categorization  | At least 80% accuracy                                    | Date-ordered 40-row merchant fixture; 32 rows for history, 8 held out; no LLM.   |
-| Forecast backtest        | MAE and MAPE are calculated                              | Uses only preceding months to forecast each held-out month.                      |
+| Forecast backtest        | 23.49% MAPE; 4,668,052 paise MAE                         | Six-month, 400-expense demo fixture; uses only earlier months for each holdout.  |
 | Anomaly detection        | 100% recall on the seeded outlier                        | Synthetic 12-expense fixture with one known outlier; precision is also returned. |
 | Planner simulation       | 1,000 deterministic runs                                 | Unit test asserts a representative fixture completes in under 200 ms locally.    |
 | Financial health scoring | Partial and complete confidence values are distinguished | Incomplete inputs are reported instead of being silently treated as zero.        |
 
-Run `npm test` to execute these regression checks. Results depend on the fixture and do not indicate that a forecast or anomaly is certain. The demo-seed integration test also runs the planning backtest over a deterministic 400-expense sample and reports its MAPE, MAE, and anomaly metrics.
+Run `npm test` to execute these regression checks. On the deterministic demo fixture, anomaly precision is 26.67% and recall is 100% (4/4 seeded outliers); the forecast figures above are measured MAE/MAPE. These values are regression baselines for the checked-in fixture, not production performance or financial-outcome guarantees. `tests/demo-seed.integration.test.ts` asserts these metrics.
 
 ## Demo seed
 
@@ -177,23 +183,23 @@ Remote demo seeding requires both `--force-remote` and `ALLOW_DEMO_SEED=true`; p
 
 ## Environment variables
 
-| Variable                  | Required           | Purpose                                                                                                                                   |
-| ------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`            | Yes                | PostgreSQL connection used by the app and migrations.                                                                                     |
-| `DATABASE_URL_TEST`       | Tests              | Separate PostgreSQL database for integration tests.                                                                                       |
-| `JWT_SECRET`              | Yes                | HMAC signing key; at least 32 characters.                                                                                                 |
-| `APP_ORIGIN`              | Yes for production | Public origin used for CSRF checks and invite links; use HTTPS in production.                                                             |
-| `NODE_ENV`                | Yes for production | Set to `production` for deployed service.                                                                                                 |
-| `SESSION_COOKIE_NAME`     | No                 | Session cookie name; defaults to `fb_session`.                                                                                            |
-| `ALLOW_DEMO_SEED`         | No                 | Must equal `true` together with `--force-remote` to seed a non-local database. Production seeding remains disabled.                       |
-| `AI_ENABLED`              | No                 | Set to `"false"` to disable all AI features globally. Defaults to `"true"` if set, but each family must also enable AI in their settings. |
-| `ANTHROPIC_API_KEY`       | No                 | Anthropic API key. Leave blank to run without AI — all AI features degrade gracefully.                                                    |
-| `AI_MODEL_FAST`           | No                 | Model ID for categorisation, text parse, bank-message import. Default: `claude-haiku-4-5-20251001`.                                       |
-| `AI_MODEL_VISION`         | No                 | Model ID for receipt OCR. Default: `claude-sonnet-5-5`.                                                                                   |
-| `AI_MODEL_COACH`          | No                 | Model ID for AI coach and scenario explanations. Default: `claude-sonnet-5-5`.                                                            |
-| `AI_MONTHLY_CAP_MICROS`   | No                 | Monthly cost cap per family in micros (1 micro = 0.000001 USD). Default `5000000` (~$5 USD / family / month).                             |
-| `AI_RATE_LIMIT_CALLS`     | No                 | Per-user AI calls allowed per window. Default `20`.                                                                                       |
-| `AI_RATE_LIMIT_WINDOW_MS` | No                 | Rate-limit window in milliseconds. Default `600000` (10 minutes).                                                                         |
+| Variable                  | Required           | Purpose                                                                                                                                |
+| ------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`            | Yes                | PostgreSQL connection used by the app and migrations.                                                                                  |
+| `DATABASE_URL_TEST`       | Tests              | Separate PostgreSQL database for integration tests.                                                                                    |
+| `JWT_SECRET`              | Yes                | HMAC signing key; at least 32 characters.                                                                                              |
+| `APP_ORIGIN`              | Yes for production | Public origin used for CSRF checks and invite links; use HTTPS in production.                                                          |
+| `NODE_ENV`                | Yes for production | Set to `production` for deployed service.                                                                                              |
+| `SESSION_COOKIE_NAME`     | No                 | Session cookie name; defaults to `fb_session`.                                                                                         |
+| `ALLOW_DEMO_SEED`         | No                 | Must equal `true` together with `--force-remote` to seed a non-local database. Production seeding remains disabled.                    |
+| `AI_ENABLED`              | No                 | Set to `"false"` to disable provider-backed AI globally. Unset permits AI, but each family must also enable it (families default off). |
+| `ANTHROPIC_API_KEY`       | No                 | Anthropic API key. Leave blank to run without AI — all AI features degrade gracefully.                                                 |
+| `AI_MODEL_FAST`           | No                 | Model ID for categorisation, text parse, bank-message import. Default: `claude-haiku-4-5-20251001`.                                    |
+| `AI_MODEL_VISION`         | No                 | Model ID for receipt OCR. Default: `claude-sonnet-5-5`.                                                                                |
+| `AI_MODEL_COACH`          | No                 | Model ID for AI coach and scenario explanations. Default: `claude-sonnet-5-5`.                                                         |
+| `AI_MONTHLY_CAP_MICROS`   | No                 | Monthly cost cap per family in micros (1 micro = 0.000001 USD). Default `5000000` (~$5 USD / family / month).                          |
+| `AI_RATE_LIMIT_CALLS`     | No                 | Per-user AI calls allowed per window. Default `20`.                                                                                    |
+| `AI_RATE_LIMIT_WINDOW_MS` | No                 | Rate-limit window in milliseconds. Default `600000` (10 minutes).                                                                      |
 
 ## npm scripts
 

@@ -23,7 +23,7 @@ export const Route = createFileRoute("/_authenticated/subscriptions")({
   component: SubscriptionsPage,
 });
 
-function SubscriptionsPage() {
+export function SubscriptionsPage() {
   const { family, canEdit } = useAuth();
   const queryClient = useQueryClient();
   const [merchant, setMerchant] = useState("");

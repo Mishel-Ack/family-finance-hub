@@ -31,7 +31,7 @@ function rupees(paise: number) {
   }).format(paise / 100);
 }
 
-function PlannerPage() {
+export function PlannerPage() {
   const { family, role } = useAuth();
   const queryClient = useQueryClient();
   const [target, setTarget] = useState("");

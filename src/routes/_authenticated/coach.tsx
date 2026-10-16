@@ -52,7 +52,7 @@ const STARTER_QUESTIONS = [
   "How are our sinking funds and savings goals progressing?",
 ];
 
-function CoachPage() {
+export function CoachPage() {
   const queryClient = useQueryClient();
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [inputMessage, setInputMessage] = useState("");

@@ -21,6 +21,7 @@ Coverage includes:
 - CSV escaping, rate limiting, service architecture guards, and deterministic demo seed behavior.
 - Deterministic six-month planning backtest metrics and seeded outlier recall; see the test output for measured fixture MAE/MAPE values (these are not production guarantees).
 - Goal-feasibility checks ensure private expenses are excluded and capacity is withheld until shared-spending history covers all three complete months.
+- Coach UI/server behavior, conversation isolation and grounded answers, theme resolution, sinking-fund presets, offline IndexedDB queue isolation, service-worker cache exclusions, AI smoke-key absence, and roadmap documentation/configuration contracts.
 
 CI runs lint, TypeScript, the complete test suite, and the production build against PostgreSQL 16.
 

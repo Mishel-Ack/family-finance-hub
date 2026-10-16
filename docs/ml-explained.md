@@ -9,12 +9,13 @@ The checked-in tests use explicit synthetic fixtures:
 | Component            | Regression criterion                                                                                                   |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | Merchant categorizer | At least 80% accuracy on an 8-row holdout from a 40-row, date-ordered fixture, without an LLM.                         |
-| Forecast engine      | Backtest reports MAE and MAPE and forecasts each month only from earlier months.                                       |
-| Anomaly detection    | Detects the single seeded outlier (100% recall) in a 12-expense fixture; precision is also reported.                   |
+| Forecast engine      | 400-expense demo backtest: 23.49% MAPE and 4,668,052 paise MAE; each month uses only earlier months.                   |
+| Anomaly detection    | 400-expense demo backtest: 100% recall (4/4 outliers) and 26.67% precision.                                            |
 | Planner simulation   | Uses 1,000 deterministic runs; a representative local unit-test fixture is expected to complete under 200 ms.          |
 | Health score         | Partial-input scoring exposes missing components and reduced confidence; complete fixture data scores full confidence. |
 
 These are code-regression thresholds, not claims about future household data or financial outcomes.
+The forecast and anomaly values are measured outputs asserted by `tests/demo-seed.integration.test.ts`; do not treat this deterministic fixture as representative of production households.
 
 ## Expense categorization and trends
 
